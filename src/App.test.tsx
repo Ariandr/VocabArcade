@@ -206,4 +206,18 @@ describe("App", () => {
     const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
     expect(sets[0].terms[0].term).toBe("first");
   });
+
+  it("shows Learn feedback for a selected correct answer", () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
+    const correctChoice = screen.getByRole("button", { name: "dos" });
+    fireEvent.click(correctChoice);
+
+    expect(screen.getByText("Correct")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "dos" })).toHaveClass("choice-correct");
+    random.mockRestore();
+  });
 });

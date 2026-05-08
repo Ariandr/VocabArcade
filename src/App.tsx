@@ -117,6 +117,39 @@ function speakText(text: string, language: VoiceLanguage = "auto"): void {
   synth.resume?.();
 }
 
+function playAnswerFeedback(correct: boolean) {
+  const audioWindow = window as Window & {
+    webkitAudioContext?: typeof AudioContext;
+  };
+  const AudioContextConstructor = window.AudioContext ?? audioWindow.webkitAudioContext;
+  if (!AudioContextConstructor) return;
+
+  try {
+    const context = new AudioContextConstructor();
+    const gain = context.createGain();
+    const now = context.currentTime;
+    const notes = correct ? [660, 880] : [260, 190];
+
+    gain.connect(context.destination);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(correct ? 0.12 : 0.09, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+
+    notes.forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = correct ? "sine" : "triangle";
+      oscillator.frequency.setValueAtTime(frequency, now + index * 0.1);
+      oscillator.connect(gain);
+      oscillator.start(now + index * 0.1);
+      oscillator.stop(now + index * 0.1 + 0.14);
+    });
+
+    window.setTimeout(() => void context.close(), 420);
+  } catch {
+    // Browser audio can be unavailable or blocked; visual feedback still works.
+  }
+}
+
 function App() {
   const [sets, setSets] = useState<StudySet[]>(() => loadSets());
   const [selectedId, setSelectedId] = useState<string | null>(() => loadSets()[0]?.id ?? null);
@@ -614,17 +647,41 @@ function LearnMode({ set }: { set: StudySet }) {
   const [input, setInput] = useState("");
   const [result, setResult] = useState("");
   const [score, setScore] = useState({ correct: 0, total: 0 });
+  const [feedback, setFeedback] = useState<{
+    selected: string;
+    answer: string;
+    correct: boolean;
+  } | null>(null);
+  const feedbackTimeoutRef = useRef<number | null>(null);
   const current = queue[0];
   const choices = useMemo(() => (current ? choicesForTerm(set, current) : []), [set, current]);
-  const typedRound = score.total % 2 === 1;
+  const visibleRoundIndex = Math.max(0, score.total - (feedback ? 1 : 0));
+  const typedRound = visibleRoundIndex % 2 === 1;
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimeoutRef.current) {
+        window.clearTimeout(feedbackTimeoutRef.current);
+        feedbackTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const answer = (value: string) => {
-    if (!current) return;
-    const correct = isCorrectAnswer(value, typedRound ? current.term : current.definition);
+    if (!current || feedback) return;
+    const expectedAnswer = typedRound ? current.term : current.definition;
+    const correct = isCorrectAnswer(value, expectedAnswer);
+    playAnswerFeedback(correct);
     setScore((prev) => ({ correct: prev.correct + (correct ? 1 : 0), total: prev.total + 1 }));
-    setResult(correct ? "Correct" : `Answer: ${typedRound ? current.term : current.definition}`);
-    setQueue((prev) => [...prev.slice(1), ...(correct ? [] : [current])]);
-    setInput("");
+    setResult(correct ? "Correct" : `Answer: ${expectedAnswer}`);
+    setFeedback({ selected: value, answer: expectedAnswer, correct });
+    feedbackTimeoutRef.current = window.setTimeout(() => {
+      setQueue((prev) => [...prev.slice(1), ...(correct ? [] : [current])]);
+      setInput("");
+      setResult("");
+      setFeedback(null);
+      feedbackTimeoutRef.current = null;
+    }, correct ? 700 : 950);
   };
 
   if (!current) {
@@ -649,19 +706,43 @@ function LearnMode({ set }: { set: StudySet }) {
             answer(input);
           }}
         >
-          <input value={input} onChange={(event) => setInput(event.target.value)} />
-          <button>Check</button>
+          <input
+            value={input}
+            disabled={Boolean(feedback)}
+            onChange={(event) => setInput(event.target.value)}
+          />
+          <button disabled={Boolean(feedback)}>Check</button>
         </form>
       ) : (
         <div className="choice-grid">
-          {choices.map((choice) => (
-            <button key={choice} onClick={() => answer(choice)}>
-              {choice}
-            </button>
-          ))}
+          {choices.map((choice) => {
+            const isSelected = feedback?.selected === choice;
+            const isCorrectAnswerChoice = feedback?.answer === choice;
+            const feedbackClass =
+              feedback && isCorrectAnswerChoice
+                ? "choice-correct"
+                : feedback && isSelected && !feedback.correct
+                  ? "choice-wrong"
+                  : "";
+
+            return (
+              <button
+                key={choice}
+                className={feedbackClass}
+                disabled={Boolean(feedback)}
+                onClick={() => answer(choice)}
+              >
+                {choice}
+              </button>
+            );
+          })}
         </div>
       )}
-      {result && <p className="result">{result}</p>}
+      {result && (
+        <p className={`result ${feedback?.correct === false ? "result-wrong" : ""}`}>
+          {result}
+        </p>
+      )}
     </div>
   );
 }
