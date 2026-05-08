@@ -21,6 +21,8 @@ describe("import helpers", () => {
   it("removes header rows and duplicated definition suffixes", () => {
     const terms = normalizeTerms([
       { term: "Term", definition: "Definition" },
+      { term: "Термин", definition: "Определение" },
+      { term: "Термін", definition: "Визначення" },
       { term: "Get a hint", definition: "Get a hint" },
       {
         term: "Still learning (7) You've begun learning these terms. Keep up the good work! Select these 7 hedge knight ought to",
@@ -30,11 +32,21 @@ describe("import helpers", () => {
       { term: "hedge 1 none of that! 3", definition: "Why, you...! 2 septon 4" },
       { term: "hedgeживопліт; огорожа", definition: "живопліт; огорожа" },
       { term: "knightлицар", definition: "лицар" },
+      { term: "Why, you...!", definition: "Ах ти ж...! / Та ти ж...! / От ти...!" },
+      { term: "none of that!", definition: "припини це! / не смій! / досить!" },
     ]);
 
-    expect(terms).toHaveLength(2);
+    expect(terms).toHaveLength(4);
     expect(terms[0]).toMatchObject({ term: "hedge", definition: "живопліт; огорожа" });
     expect(terms[1]).toMatchObject({ term: "knight", definition: "лицар" });
+    expect(terms[2]).toMatchObject({
+      term: "Why, you...!",
+      definition: "Ах ти ж...! / Та ти ж...! / От ти...!",
+    });
+    expect(terms[3]).toMatchObject({
+      term: "none of that!",
+      definition: "припини це! / не смій! / досить!",
+    });
   });
 
   it("parses CSV and TSV pasted data", () => {

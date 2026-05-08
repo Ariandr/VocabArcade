@@ -21,11 +21,25 @@ export function buildBookmarklet(appUrl: string): string {
       "don't know?",
       "search for a question"
     ];
-    const blockedControlFragments = ["free 7-day trial", "none of that", "why, you"];
-    const isControlBlock = (value) => {
-      const text = clean(value).toLocaleLowerCase();
-      const hits = pageControlFragments.filter((fragment) => text.includes(fragment)).length;
-      return text === "search" || blockedControlFragments.some((fragment) => text.includes(fragment)) || hits >= 2 || text.startsWith("upgrade") || text.startsWith("still learning") || text.startsWith("not studied") || text.startsWith("terms in this set");
+    const isControlPair = (term, definition) => {
+      const normalizedTerm = clean(term).toLocaleLowerCase();
+      const normalizedDefinition = clean(definition).toLocaleLowerCase();
+      return (
+        (normalizedTerm === "search" && normalizedDefinition.startsWith("upgrade")) ||
+        (normalizedTerm === "search" && normalizedDefinition.includes("free 7-day trial")) ||
+        isChoiceArtifactPair(normalizedTerm, normalizedDefinition) ||
+        isSectionControlBlock(normalizedTerm) ||
+        isSectionControlBlock(normalizedDefinition)
+      );
+    };
+    const isChoiceArtifactPair = (term, definition) => {
+      const combined = term + " " + definition;
+      const optionNumbers = combined.match(/\\b[1-4]\\b/g) || [];
+      return optionNumbers.length >= 4 && combined.includes("none of that") && combined.includes("why, you");
+    };
+    const isSectionControlBlock = (value) => {
+      const hits = pageControlFragments.filter((fragment) => value.includes(fragment)).length;
+      return hits >= 2 || (value.startsWith("still learning") && value.includes("select these")) || (value.startsWith("not studied") && value.includes("select these")) || (value.startsWith("terms in this set") && value.includes("your stats"));
     };
     const isControlText = (value) => {
       const text = clean(value).toLocaleLowerCase();
@@ -50,7 +64,7 @@ export function buildBookmarklet(appUrl: string): string {
       definition = clean(definition);
       term = stripDuplicatedDefinition(term, definition);
       if (term.toLocaleLowerCase() === "term" && definition.toLocaleLowerCase() === "definition") return;
-      if (isControlBlock(term) || isControlBlock(definition)) return;
+      if (isControlPair(term, definition)) return;
       if (term && definition && !pairs.some((item) => item.term === term && item.definition === definition)) {
         pairs.push({ term, definition });
       }
@@ -219,9 +233,6 @@ export function buildBookmarklet(appUrl: string): string {
         return;
       }
       const record = value;
-      if (record.word && record.definition) add(record.word, record.definition);
-      if (record.term && record.definition) add(record.term, record.definition);
-      if (record.term && record.meaning) add(record.term, record.meaning);
       if (record.cardSides) addCardSides(record.cardSides);
       for (const key of Object.keys(record)) {
         const child = record[key];
@@ -234,8 +245,8 @@ export function buildBookmarklet(appUrl: string): string {
         parseCandidates(JSON.parse(script.textContent || ""));
       } catch {}
     });
-    addExactLayoutPairs();
-    addPairsByIcons();
+    if (pairs.length < 2) addExactLayoutPairs();
+    if (pairs.length < 2) addPairsByIcons();
     if (pairs.length < 2) addLayoutPairs();
     if (pairs.length === 0) {
       alert("No term-definition pairs were found on this page.");

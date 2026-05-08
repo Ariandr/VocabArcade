@@ -1,8 +1,35 @@
 import type { ImportPayload, StudySet, StudyTerm } from "../types";
 
 const MIN_TEXT_LENGTH = 1;
-const HEADER_TERMS = new Set(["term", "terms", "word", "front"]);
-const HEADER_DEFINITIONS = new Set(["definition", "definitions", "meaning", "back"]);
+const HEADER_TERMS = new Set([
+  "term",
+  "terms",
+  "word",
+  "front",
+  "термин",
+  "термины",
+  "слово",
+  "лицевая сторона",
+  "термін",
+  "терміни",
+  "слово",
+  "przód",
+  "termin",
+]);
+const HEADER_DEFINITIONS = new Set([
+  "definition",
+  "definitions",
+  "meaning",
+  "back",
+  "определение",
+  "определения",
+  "значение",
+  "обратная сторона",
+  "визначення",
+  "значення",
+  "tył",
+  "definicja",
+]);
 const IGNORED_EXACT_PAIRS = new Set(["get a hint"]);
 const PAGE_CONTROL_FRAGMENTS = [
   "free 7-day trial",
@@ -17,7 +44,6 @@ const PAGE_CONTROL_FRAGMENTS = [
   "don't know?",
   "search for a question",
 ];
-const BLOCKED_CONTROL_FRAGMENTS = ["free 7-day trial", "none of that", "why, you"];
 
 export function makeId(prefix = "id"): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -56,21 +82,33 @@ export function isIgnoredTermPair(term: string, definition: string): boolean {
   const normalizedDefinition = cleanText(definition).toLocaleLowerCase();
   return (
     (normalizedTerm === normalizedDefinition && IGNORED_EXACT_PAIRS.has(normalizedTerm)) ||
-    isPageControlBlock(normalizedTerm) ||
-    isPageControlBlock(normalizedDefinition)
+    isPageControlPair(normalizedTerm, normalizedDefinition)
   );
 }
 
-function isPageControlBlock(value: string): boolean {
+function isPageControlPair(term: string, definition: string): boolean {
+  return (
+    (term === "search" && definition.startsWith("upgrade")) ||
+    (term === "search" && definition.includes("free 7-day trial")) ||
+    isChoiceArtifactPair(term, definition) ||
+    isSectionControlBlock(term) ||
+    isSectionControlBlock(definition)
+  );
+}
+
+function isChoiceArtifactPair(term: string, definition: string): boolean {
+  const combined = `${term} ${definition}`;
+  const optionNumbers = combined.match(/\b[1-4]\b/g) ?? [];
+  return optionNumbers.length >= 4 && combined.includes("none of that") && combined.includes("why, you");
+}
+
+function isSectionControlBlock(value: string): boolean {
   const hits = PAGE_CONTROL_FRAGMENTS.filter((fragment) => value.includes(fragment)).length;
   return (
-    value === "search" ||
-    BLOCKED_CONTROL_FRAGMENTS.some((fragment) => value.includes(fragment)) ||
     hits >= 2 ||
-    value.startsWith("upgrade") ||
-    value.startsWith("still learning") ||
-    value.startsWith("not studied") ||
-    value.startsWith("terms in this set")
+    (value.startsWith("still learning") && value.includes("select these")) ||
+    (value.startsWith("not studied") && value.includes("select these")) ||
+    (value.startsWith("terms in this set") && value.includes("your stats"))
   );
 }
 

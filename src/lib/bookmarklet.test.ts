@@ -14,5 +14,7 @@ describe("bookmarklet", () => {
     expect(decoded).toContain("[data-testid='set-page-term-card-side']");
     expect(decoded).toContain("parseDataString");
     expect(decoded).toContain("window.__NEXT_DATA__");
+    expect(decoded).toContain("record.cardSides");
+    expect(decoded).not.toContain("record.term && record.definition");
   });
 });
