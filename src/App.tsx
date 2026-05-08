@@ -18,6 +18,7 @@ import {
   parseManualImport,
   payloadToStudySet,
   validateImportMessage,
+  makeId,
 } from "./lib/import";
 import {
   loadLearnSettings,
@@ -556,6 +557,20 @@ function EditMode({ set, onSetChange }: { set: StudySet; onSetChange: (set: Stud
     });
   };
 
+  const addTerm = () => {
+    const newTerm: StudyTerm = {
+      id: makeId("term"),
+      term: "",
+      definition: ""
+    };
+    onSetChange({
+      ...set,
+      terms: [newTerm, ...set.terms],
+      updatedAt: new Date().toISOString(),
+    });
+    setQuery("");
+  };
+
   return (
     <div className="panel">
       <div className="toolbar">
@@ -565,13 +580,16 @@ function EditMode({ set, onSetChange }: { set: StudySet; onSetChange: (set: Stud
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search terms to edit"
         />
-        <button
-          onClick={() =>
-            onSetChange({ ...set, terms: shuffle(set.terms), updatedAt: new Date().toISOString() })
-          }
-        >
-          Shuffle
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button onClick={addTerm}>Add pair</button>
+          <button
+            onClick={() =>
+              onSetChange({ ...set, terms: shuffle(set.terms), updatedAt: new Date().toISOString() })
+            }
+          >
+            Shuffle
+          </button>
+        </div>
       </div>
       <div className="term-table">
         {visibleTerms.map((term) => (
