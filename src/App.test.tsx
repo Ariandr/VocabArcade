@@ -220,4 +220,46 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "dos" })).toHaveClass("choice-correct");
     random.mockRestore();
   });
+
+  it("keeps wrong Learn answers visible until Continue is clicked", () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
+    fireEvent.click(screen.getByRole("button", { name: "uno" }));
+
+    expect(screen.getByText("No worries. Learning is a process.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "two" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "uno" })).toHaveClass("choice-wrong");
+    expect(screen.getByRole("button", { name: "dos" })).toHaveClass("choice-correct");
+    expect(screen.getByText("0 / 4")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(screen.queryByText("No worries. Learning is a process.")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "tres" })).toBeInTheDocument();
+    expect(screen.getByText("1 / 4")).toBeInTheDocument();
+    random.mockRestore();
+  });
+
+  it("auto-advances correct Learn answers", () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
+    fireEvent.click(screen.getByRole("button", { name: "dos" }));
+    expect(screen.getByRole("heading", { name: "two" })).toBeInTheDocument();
+    expect(screen.getByText("1 / 4")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+
+    expect(screen.getByRole("heading", { name: "tres" })).toBeInTheDocument();
+    random.mockRestore();
+    vi.useRealTimers();
+  });
 });
