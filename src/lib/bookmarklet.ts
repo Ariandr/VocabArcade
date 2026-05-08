@@ -7,6 +7,32 @@ export function buildBookmarklet(appUrl: string): string {
   const APP_URL = ${JSON.stringify(appImportUrl.toString())};
   const APP_ORIGIN = new URL(APP_URL).origin;
   const clean = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+  const pageControlFragments = [
+    "still learning",
+    "not studied",
+    "you've begun learning",
+    "you haven't studied",
+    "keep up the good work",
+    "select these",
+    "terms in this set",
+    "your stats",
+    "don't know?",
+    "search for a question"
+  ];
+  const isControlBlock = (value) => {
+    const text = clean(value).toLocaleLowerCase();
+    const hits = pageControlFragments.filter((fragment) => text.includes(fragment)).length;
+    return hits >= 2 || text.startsWith("still learning") || text.startsWith("not studied") || text.startsWith("terms in this set");
+  };
+  const isControlText = (value) => {
+    const text = clean(value).toLocaleLowerCase();
+    return !text || pageControlFragments.some((fragment) => text === fragment || text.startsWith(fragment));
+  };
+  const isVisible = (element) => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
+  };
   const stripDuplicatedDefinition = (term, definition) => {
     const lowerTerm = term.toLocaleLowerCase();
     const lowerDefinition = definition.toLocaleLowerCase();
@@ -21,9 +47,57 @@ export function buildBookmarklet(appUrl: string): string {
     definition = clean(definition);
     term = stripDuplicatedDefinition(term, definition);
     if (term.toLocaleLowerCase() === "term" && definition.toLocaleLowerCase() === "definition") return;
+    if (isControlBlock(term) || isControlBlock(definition)) return;
     if (term && definition && !pairs.some((item) => item.term === term && item.definition === definition)) {
       pairs.push({ term, definition });
     }
+  };
+  const textItemsIn = (root) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const items = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      const text = clean(node.textContent);
+      if (!parent || !text || text.length > 500 || isControlText(text)) continue;
+      if (parent.closest("button, input, textarea, select, option, svg, script, style, noscript")) continue;
+      if (!isVisible(parent)) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const rect = range.getBoundingClientRect();
+      range.detach();
+      if (rect.width < 1 || rect.height < 1) continue;
+      items.push({ text, rect });
+    }
+    return items;
+  };
+  const addLayoutPairs = () => {
+    const candidates = Array.from(document.querySelectorAll("[data-testid*='SetPageTerm'], [class*='SetPageTerm'], article, li, div"));
+    const rows = [];
+    candidates.forEach((node) => {
+      if (!(node instanceof Element) || !isVisible(node)) return;
+      const rect = node.getBoundingClientRect();
+      if (rect.width < 260 || rect.height < 36 || rect.height > 260) return;
+      const items = textItemsIn(node);
+      if (items.length < 2 || items.length > 8) return;
+      const midpoint = rect.left + rect.width * 0.52;
+      const left = items.filter((item) => item.rect.left + item.rect.width / 2 < midpoint);
+      const right = items.filter((item) => item.rect.left + item.rect.width / 2 >= midpoint);
+      if (!left.length || !right.length) return;
+      const leftRightEdge = Math.max(...left.map((item) => item.rect.right));
+      const rightLeftEdge = Math.min(...right.map((item) => item.rect.left));
+      if (rightLeftEdge - leftRightEdge < 18) return;
+      const orderedText = (side) => clean(side
+        .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)
+        .map((item) => item.text)
+        .join(" "));
+      const term = orderedText(left);
+      const definition = orderedText(right);
+      if (!term || !definition || term === definition) return;
+      rows.push({ top: rect.top, left: rect.left, term, definition });
+    });
+    rows
+      .sort((a, b) => a.top - b.top || a.left - b.left)
+      .forEach((row) => add(row.term, row.definition));
   };
   const parseCandidates = (value) => {
     if (!value || typeof value !== "object") return;
@@ -43,16 +117,11 @@ export function buildBookmarklet(appUrl: string): string {
       if (child && typeof child === "object") parseCandidates(child);
     }
   };
-  document.querySelectorAll("script[type='application/json'], script#__NEXT_DATA__").forEach((script) => {
+  addLayoutPairs();
+  if (pairs.length < 2) document.querySelectorAll("script[type='application/json'], script#__NEXT_DATA__").forEach((script) => {
     try {
       parseCandidates(JSON.parse(script.textContent || ""));
     } catch {}
-  });
-  if (pairs.length < 2) document.querySelectorAll("[data-testid*='Term'], [class*='TermText'], [class*='SetPageTerm']").forEach((node) => {
-    const texts = Array.from(node.querySelectorAll("span, a, div"))
-      .map((item) => clean(item.textContent))
-      .filter((text) => text.length > 0 && text.length < 500);
-    if (texts.length >= 2) add(texts[0], texts[texts.length - 1]);
   });
   if (pairs.length === 0) {
     alert("No term-definition pairs were found on this page.");

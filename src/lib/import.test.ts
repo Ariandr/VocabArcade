@@ -22,6 +22,10 @@ describe("import helpers", () => {
     const terms = normalizeTerms([
       { term: "Term", definition: "Definition" },
       { term: "Get a hint", definition: "Get a hint" },
+      {
+        term: "Still learning (7) You've begun learning these terms. Keep up the good work! Select these 7 hedge knight ought to",
+        definition: "зачерпнути, загрібати",
+      },
       { term: "hedgeживопліт; огорожа", definition: "живопліт; огорожа" },
       { term: "knightлицар", definition: "лицар" },
     ]);

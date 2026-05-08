@@ -4,6 +4,18 @@ const MIN_TEXT_LENGTH = 1;
 const HEADER_TERMS = new Set(["term", "terms", "word", "front"]);
 const HEADER_DEFINITIONS = new Set(["definition", "definitions", "meaning", "back"]);
 const IGNORED_EXACT_PAIRS = new Set(["get a hint"]);
+const PAGE_CONTROL_FRAGMENTS = [
+  "still learning",
+  "not studied",
+  "you've begun learning",
+  "you haven't studied",
+  "keep up the good work",
+  "select these",
+  "terms in this set",
+  "your stats",
+  "don't know?",
+  "search for a question",
+];
 
 export function makeId(prefix = "id"): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -40,7 +52,21 @@ function isHeaderPair(term: string, definition: string): boolean {
 export function isIgnoredTermPair(term: string, definition: string): boolean {
   const normalizedTerm = cleanText(term).toLocaleLowerCase();
   const normalizedDefinition = cleanText(definition).toLocaleLowerCase();
-  return normalizedTerm === normalizedDefinition && IGNORED_EXACT_PAIRS.has(normalizedTerm);
+  return (
+    (normalizedTerm === normalizedDefinition && IGNORED_EXACT_PAIRS.has(normalizedTerm)) ||
+    isPageControlBlock(normalizedTerm) ||
+    isPageControlBlock(normalizedDefinition)
+  );
+}
+
+function isPageControlBlock(value: string): boolean {
+  const hits = PAGE_CONTROL_FRAGMENTS.filter((fragment) => value.includes(fragment)).length;
+  return (
+    hits >= 2 ||
+    value.startsWith("still learning") ||
+    value.startsWith("not studied") ||
+    value.startsWith("terms in this set")
+  );
 }
 
 export function normalizeTerms(
