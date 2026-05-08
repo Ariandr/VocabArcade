@@ -162,6 +162,7 @@ function playAnswerFeedback(correct: boolean) {
 function App() {
   const [sets, setSets] = useState<StudySet[]>(() => loadSets());
   const [selectedId, setSelectedId] = useState<string | null>(() => loadSets()[0]?.id ?? null);
+  const [isManaging, setIsManaging] = useState(() => !loadSets().length);
   const [mode, setMode] = useState<Mode>("review");
   const [notice, setNotice] = useState("");
   const lastImportRef = useRef<{ signature: string; receivedAt: number } | null>(null);
@@ -202,6 +203,7 @@ function App() {
     saveSets(next);
     setSets(next);
     setSelectedId(nextSet.id);
+    setIsManaging(false);
     setMode("review");
     setNotice(
       `${existingSet ? "Updated" : "Imported"} ${nextSet.terms.length} terms in "${nextSet.title}".`,
@@ -230,11 +232,11 @@ function App() {
     setSets(next);
   };
 
-  const removeSelectedSet = () => {
-    if (!selectedSet) return;
-    const next = deleteSet(selectedSet.id);
+  const handleRemoveSet = (id: string) => {
+    const next = deleteSet(id);
     setSets(next);
-    setSelectedId(next[0]?.id ?? null);
+    if (selectedId === id) setSelectedId(next[0]?.id ?? null);
+    if (next.length === 0) setIsManaging(true);
   };
 
   return (
@@ -244,12 +246,19 @@ function App() {
           Vocab Arcade
         </button>
         <nav className="top-actions" aria-label="Main navigation">
-          <button onClick={() => setSelectedId(null)}>Import</button>
+          {!isManaging && selectedSet ? (
+            <button onClick={() => setIsManaging(true)}>Manage</button>
+          ) : (
+            sets.length > 0 && <button onClick={() => setIsManaging(false)}>Practice</button>
+          )}
           {sets.length > 0 && (
             <select
               aria-label="Saved sets"
               value={selectedId ?? ""}
-              onChange={(event) => setSelectedId(event.target.value)}
+              onChange={(event) => {
+                setSelectedId(event.target.value);
+                setIsManaging(false);
+              }}
             >
               {sets.map((set) => (
                 <option key={set.id} value={set.id}>
@@ -269,16 +278,20 @@ function App() {
 
       {isImportRoute && !selectedSet ? (
         <ImportReceiver />
-      ) : selectedSet ? (
+      ) : !isManaging && selectedSet ? (
         <StudyWorkspace
           mode={mode}
           set={selectedSet}
           onModeChange={setMode}
           onSetChange={updateSelectedSet}
-          onDelete={removeSelectedSet}
         />
       ) : (
-        <ImportScreen onImport={addImportedSet} sets={sets} onOpenSet={setSelectedId} />
+        <ImportScreen 
+          onImport={addImportedSet} 
+          sets={sets} 
+          onOpenSet={(id) => { setSelectedId(id); setIsManaging(false); }} 
+          onDeleteSet={handleRemoveSet} 
+        />
       )}
     </main>
   );
@@ -301,10 +314,12 @@ function ImportScreen({
   onImport,
   sets,
   onOpenSet,
+  onDeleteSet,
 }: {
   onImport: (payload: ImportPayload) => void;
   sets: StudySet[];
   onOpenSet: (id: string) => void;
+  onDeleteSet: (id: string) => void;
 }) {
   const [manualText, setManualText] = useState("");
   const [error, setError] = useState("");
@@ -325,64 +340,125 @@ function ImportScreen({
     }
   };
 
+  const confirmDelete = (set: StudySet) => {
+    if (window.confirm(`Are you sure you want to delete "${set.title}"?`)) {
+      onDeleteSet(set.id);
+    }
+  };
+
+  const exportSet = (set: StudySet) => {
+    const data = JSON.stringify(set, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${set.title}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        onImport(parseManualImport(text));
+        setError("");
+      } catch (importError) {
+        setError(importError instanceof Error ? importError.message : "File import failed.");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  };
+
   return (
-    <section className="import-grid">
-      <div className="hero-copy">
-        <p className="eyebrow">Browser-only vocabulary practice</p>
-        <h1>Import a study set and practice it with focused game modes.</h1>
-        <p>
-          Drag the bookmarklet below to your bookmarks bar, then click it on any 
-          study set page to instantly import the terms. Everything is saved locally on this device.
-        </p>
-      </div>
-
-      <div className="panel">
-        <h2>Bookmarklet Import</h2>
-        <div className="steps">
-          <span>
-            1. Show your bookmarks bar: press <kbd>Cmd</kbd> + <kbd>Shift</kbd> +{" "}
-            <kbd>B</kbd> in Chrome or Edge on Mac, or use Safari's View menu.
-          </span>
-          <span>2. Drag this link to your bookmarks bar:</span>
-          <a className="bookmarklet" href="#" ref={bookmarkletRef}>
-            Import to Vocab Arcade
-          </a>
-          <span>
-            If dragging fails, right-click it, copy the link address, and paste
-            that address into a new bookmark.
-          </span>
-          <span>3. Open any study set page.</span>
-          <span>4. Click the bookmarklet while you are on that page.</span>
+    <>
+      <section className="import-grid">
+        <div className="hero-copy">
+          <p className="eyebrow">Browser-only vocabulary practice</p>
+          <h1>Import a study set and practice it with focused game modes.</h1>
+          <p>
+            Drag the bookmarklet below to your bookmarks bar, then click it on any 
+            study set page to instantly import the terms. Everything is saved locally on this device.
+          </p>
         </div>
-      </div>
 
-      <div className="panel">
-        <label htmlFor="manual-import">Paste JSON, CSV, or TSV</label>
-        <textarea
-          id="manual-import"
-          rows={8}
-          value={manualText}
-          onChange={(event) => setManualText(event.target.value)}
-          placeholder={"word\tdefinition\nfront,back"}
-        />
-        {error && <p className="error">{error}</p>}
-        <button onClick={importManual}>Import pasted data</button>
-      </div>
+        <div className="panel">
+          <h2>Bookmarklet Import</h2>
+          <div className="steps">
+            <span>
+              1. Show your bookmarks bar: press <kbd>Cmd</kbd> + <kbd>Shift</kbd> +{" "}
+              <kbd>B</kbd> in Chrome or Edge on Mac, or use Safari's View menu.
+            </span>
+            <span>2. Drag this link to your bookmarks bar:</span>
+            <a className="bookmarklet" href="#" ref={bookmarkletRef}>
+              Import to Vocab Arcade
+            </a>
+            <span>
+              If dragging fails, right-click it, copy the link address, and paste
+              that address into a new bookmark.
+            </span>
+            <span>3. Open any study set page.</span>
+            <span>4. Click the bookmarklet while you are on that page.</span>
+          </div>
+        </div>
+
+        <div className="panel">
+          <label htmlFor="manual-import">Paste JSON, CSV, or TSV</label>
+          <textarea
+            id="manual-import"
+            rows={8}
+            value={manualText}
+            onChange={(event) => setManualText(event.target.value)}
+            placeholder={"word\tdefinition\nfront,back"}
+          />
+          {error && <p className="error">{error}</p>}
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button onClick={importManual} style={{ flex: 1 }}>Import pasted data</button>
+            <label className="button-link" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', background: '#303956', margin: 0, minHeight: '2.75rem', padding: '0 1rem', borderRadius: '8px', color: '#fff', fontSize: '1rem' }}>
+              Import from .json file
+              <input type="file" accept=".json" onChange={importFile} style={{ display: 'none' }} />
+            </label>
+          </div>
+        </div>
+      </section>
 
       {sets.length > 0 && (
-        <div className="panel saved-panel">
+        <div className="panel saved-panel" style={{ marginTop: '1rem' }}>
           <h2>Saved sets</h2>
           <div className="saved-list">
             {sets.map((set) => (
-              <button key={set.id} onClick={() => onOpenSet(set.id)}>
-                <strong>{set.title}</strong>
-                <span>{set.terms.length} terms</span>
-              </button>
+              <div key={set.id} style={{ display: 'flex', gap: '0.5rem' }}>
+                <button style={{ flex: 1 }} onClick={() => onOpenSet(set.id)}>
+                  <strong>{set.title}</strong>
+                  <span>{set.terms.length} terms</span>
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); exportSet(set); }} 
+                  style={{ width: 'auto', background: '#303956', padding: '0 1.25rem' }}
+                  aria-label="Export to JSON"
+                >
+                  Export
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); confirmDelete(set); }} 
+                  className="danger"
+                  style={{ width: 'auto', padding: '0 1.25rem' }}
+                  aria-label="Delete set"
+                >
+                  Delete
+                </button>
+              </div>
             ))}
           </div>
         </div>
       )}
-    </section>
+    </>
   );
 }
 
@@ -391,13 +467,11 @@ function StudyWorkspace({
   mode,
   onModeChange,
   onSetChange,
-  onDelete,
 }: {
   set: StudySet;
   mode: Mode;
   onModeChange: (mode: Mode) => void;
   onSetChange: (set: StudySet) => void;
-  onDelete: () => void;
 }) {
   const [termLanguage, setTermLanguage] = useState<VoiceLanguage>(() => 
     (localStorage.getItem("vocab-arcade:voice-term") as VoiceLanguage) || "auto"
@@ -450,9 +524,6 @@ function StudyWorkspace({
               </select>
             </label>
           </div>
-          <button className="danger" onClick={onDelete}>
-            Delete set
-          </button>
         </div>
       </div>
 
