@@ -112,8 +112,27 @@ export function buildBookmarklet(appUrl: string): string {
       .sort((a, b) => a.top - b.top || a.left - b.left)
       .forEach((row) => add(row.term, row.definition));
   };
+  const addCardSides = (cardSides) => {
+    if (!Array.isArray(cardSides) || cardSides.length < 2) return;
+    const wordSide = cardSides.find((side) => side?.label === "word" || side?.sideId === 0) || cardSides[0];
+    const definitionSide = cardSides.find((side) => side?.label === "definition" || side?.sideId === 1) || cardSides[1];
+    add(wordSide?.media?.[0]?.plainText, definitionSide?.media?.[0]?.plainText);
+  };
+  const parseDataString = (value) => {
+    const text = String(value || "").trim();
+    if (!text || (!text.startsWith("{") && !text.startsWith("["))) return;
+    if (!text.includes("cardSides") && !text.includes("studiableItems") && !text.includes("plainText")) return;
+    try {
+      parseCandidates(JSON.parse(text));
+    } catch {}
+  };
   const parseCandidates = (value) => {
-    if (!value || typeof value !== "object") return;
+    if (!value) return;
+    if (typeof value === "string") {
+      parseDataString(value);
+      return;
+    }
+    if (typeof value !== "object") return;
     if (Array.isArray(value)) {
       value.forEach(parseCandidates);
       return;
@@ -122,20 +141,19 @@ export function buildBookmarklet(appUrl: string): string {
     if (record.word && record.definition) add(record.word, record.definition);
     if (record.term && record.definition) add(record.term, record.definition);
     if (record.term && record.meaning) add(record.term, record.meaning);
-    if (record.cardSides && Array.isArray(record.cardSides) && record.cardSides.length >= 2) {
-      add(record.cardSides[0]?.media?.[0]?.plainText, record.cardSides[1]?.media?.[0]?.plainText);
-    }
+    if (record.cardSides) addCardSides(record.cardSides);
     for (const key of Object.keys(record)) {
       const child = record[key];
-      if (child && typeof child === "object") parseCandidates(child);
+      if (child && (typeof child === "object" || typeof child === "string")) parseCandidates(child);
     }
   };
-  addExactLayoutPairs();
+  if (window.__NEXT_DATA__) parseCandidates(window.__NEXT_DATA__);
   document.querySelectorAll("script[type='application/json'], script#__NEXT_DATA__").forEach((script) => {
     try {
       parseCandidates(JSON.parse(script.textContent || ""));
     } catch {}
   });
+  if (pairs.length < 2) addExactLayoutPairs();
   if (pairs.length < 2) addLayoutPairs();
   if (pairs.length === 0) {
     alert("No term-definition pairs were found on this page.");
