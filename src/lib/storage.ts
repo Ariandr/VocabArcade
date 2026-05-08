@@ -3,6 +3,46 @@ import { isIgnoredTermPair } from "./import";
 
 const SETS_KEY = "vocab-arcade:sets";
 const PROGRESS_KEY = "vocab-arcade:progress";
+const LEARN_SETTINGS_KEY = "vocab-arcade:learn-settings";
+
+export type LearnSettings = {
+  shuffle: boolean;
+  multipleChoice: boolean;
+  written: boolean;
+};
+
+export const DEFAULT_LEARN_SETTINGS: LearnSettings = {
+  shuffle: true,
+  multipleChoice: true,
+  written: false,
+};
+
+export function normalizeLearnSettings(value: Partial<LearnSettings> | null): LearnSettings {
+  const settings = {
+    ...DEFAULT_LEARN_SETTINGS,
+    ...(value ?? {}),
+  };
+
+  if (!settings.multipleChoice && !settings.written) {
+    settings.multipleChoice = true;
+  }
+
+  return settings;
+}
+
+export function loadLearnSettings(): LearnSettings {
+  const raw = localStorage.getItem(LEARN_SETTINGS_KEY);
+  if (!raw) return DEFAULT_LEARN_SETTINGS;
+  try {
+    return normalizeLearnSettings(JSON.parse(raw) as Partial<LearnSettings>);
+  } catch {
+    return DEFAULT_LEARN_SETTINGS;
+  }
+}
+
+export function saveLearnSettings(settings: LearnSettings): void {
+  localStorage.setItem(LEARN_SETTINGS_KEY, JSON.stringify(normalizeLearnSettings(settings)));
+}
 
 export function loadSets(): StudySet[] {
   const raw = localStorage.getItem(SETS_KEY);

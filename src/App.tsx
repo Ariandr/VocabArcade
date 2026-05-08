@@ -19,7 +19,15 @@ import {
   payloadToStudySet,
   validateImportMessage,
 } from "./lib/import";
-import { deleteSet, loadSets, saveSets } from "./lib/storage";
+import {
+  loadLearnSettings,
+  deleteSet,
+  loadSets,
+  normalizeLearnSettings,
+  saveLearnSettings,
+  saveSets,
+  type LearnSettings,
+} from "./lib/storage";
 
 type Mode =
   | "review"
@@ -494,19 +502,31 @@ function ReviewMode({ set }: { set: StudySet }) {
       <div className="review-list">
         {visibleTerms.map((term) => (
           <article className="review-row" key={term.id}>
-            <div>
+            <div className="review-cell">
               <p>{term.term}</p>
-              <button className="icon-button" onClick={() => speakText(term.term, termLanguage)}>
-                Speak term
+              <button
+                aria-label="Speak term"
+                className="review-speak-button"
+                title="Speak term"
+                type="button"
+                onClick={() => speakText(term.term, termLanguage)}
+              >
+                🔊
               </button>
             </div>
-            <div>
+            <span className="review-divider" aria-hidden="true">
+              |
+            </span>
+            <div className="review-cell">
               <p>{term.definition}</p>
               <button
-                className="icon-button"
+                aria-label="Speak definition"
+                className="review-speak-button"
+                title="Speak definition"
+                type="button"
                 onClick={() => speakText(term.definition, definitionLanguage)}
               >
-                Speak definition
+                🔊
               </button>
             </div>
           </article>
@@ -642,31 +662,53 @@ function FlashcardsMode({ set }: { set: StudySet }) {
   );
 }
 
+type LearnPhase = "multiple-choice" | "written";
+
+function firstLearnPhase(settings: LearnSettings): LearnPhase {
+  return settings.multipleChoice ? "multiple-choice" : "written";
+}
+
+function nextLearnPhase(phase: LearnPhase, settings: LearnSettings): LearnPhase | null {
+  if (phase === "multiple-choice" && settings.written) return "written";
+  return null;
+}
+
+function buildLearnQueue(terms: StudyTerm[], shouldShuffle: boolean): StudyTerm[] {
+  return shouldShuffle ? shuffle(terms) : [...terms];
+}
+
+function learnProgressTotal(settings: LearnSettings, termCount: number): number {
+  return Math.max(
+    1,
+    (settings.multipleChoice ? termCount : 0) + (settings.written ? termCount : 0),
+  );
+}
+
 function LearnMode({ set }: { set: StudySet }) {
   const learnSectionSize = 7;
-  const [queue, setQueue] = useState(() => shuffle(set.terms));
+  const [settings, setSettings] = useState<LearnSettings>(() => loadLearnSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [phase, setPhase] = useState<LearnPhase>(() => firstLearnPhase(settings));
+  const [queue, setQueue] = useState(() => buildLearnQueue(set.terms, settings.shuffle));
   const [score, setScore] = useState({ correct: 0, total: 0 });
   const [sectionCompleted, setSectionCompleted] = useState<StudyTerm[]>([]);
   const [showSectionSummary, setShowSectionSummary] = useState(false);
+  const [writtenInput, setWrittenInput] = useState("");
   const [feedback, setFeedback] = useState<{
     status: "correct" | "wrong";
     selected: string;
     answer: string;
     prompt: string;
     term: StudyTerm;
+    phase: LearnPhase;
   } | null>(null);
   const feedbackTimeoutRef = useRef<number | null>(null);
   const current = queue[0];
-  const choices = useMemo(() => (current ? choicesForTerm(set, current) : []), [set, current]);
-
-  useEffect(() => {
-    return () => {
-      if (feedbackTimeoutRef.current) {
-        window.clearTimeout(feedbackTimeoutRef.current);
-        feedbackTimeoutRef.current = null;
-      }
-    };
-  }, []);
+  const choices = useMemo(
+    () => (phase === "multiple-choice" && current ? choicesForTerm(set, current) : []),
+    [set, current, phase],
+  );
+  const progressTotal = learnProgressTotal(settings, set.terms.length);
 
   const clearFeedbackTimer = () => {
     if (feedbackTimeoutRef.current) {
@@ -675,29 +717,74 @@ function LearnMode({ set }: { set: StudySet }) {
     }
   };
 
+  const resetLearn = (nextSettings = settings) => {
+    const nextPhase = firstLearnPhase(nextSettings);
+    clearFeedbackTimer();
+    setPhase(nextPhase);
+    setQueue(buildLearnQueue(set.terms, nextSettings.shuffle));
+    setScore({ correct: 0, total: 0 });
+    setSectionCompleted([]);
+    setShowSectionSummary(false);
+    setFeedback(null);
+    setWrittenInput("");
+  };
+
+  useEffect(() => {
+    return () => clearFeedbackTimer();
+  }, []);
+
+  useEffect(() => {
+    resetLearn(settings);
+  }, [set.id, set.terms.length]);
+
+  const updateLearnSettings = (key: keyof LearnSettings, value: boolean) => {
+    const next = { ...settings, [key]: value };
+    if (key === "multipleChoice" && !value && !next.written) {
+      next.written = true;
+    }
+    if (key === "written" && !value && !next.multipleChoice) {
+      next.multipleChoice = true;
+    }
+    const normalized = normalizeLearnSettings(next);
+    setSettings(normalized);
+    saveLearnSettings(normalized);
+    resetLearn(normalized);
+  };
+
   const advanceLearn = (term: StudyTerm, wasCorrect: boolean) => {
     const nextSectionCompleted = [...sectionCompleted, term];
-    const nextTotal = score.total + 1;
-    const shouldShowSummary =
-      nextSectionCompleted.length >= learnSectionSize || nextTotal >= set.terms.length;
+    const nextScore = {
+      correct: score.correct + (wasCorrect ? 1 : 0),
+      total: score.total + 1,
+    };
+    let nextPhaseValue = phase;
+    let nextQueue = [...queue.slice(1), ...(wasCorrect ? [] : [term])];
 
-    setScore((prev) => ({
-      correct: prev.correct + (wasCorrect ? 1 : 0),
-      total: prev.total + 1,
-    }));
+    if (nextQueue.length === 0) {
+      const followingPhase = nextLearnPhase(phase, settings);
+      if (followingPhase) {
+        nextPhaseValue = followingPhase;
+        nextQueue = buildLearnQueue(set.terms, settings.shuffle);
+      }
+    }
+
+    const flowComplete = nextQueue.length === 0 && nextLearnPhase(nextPhaseValue, settings) === null;
+    const shouldShowSummary =
+      nextSectionCompleted.length >= learnSectionSize || flowComplete;
+
+    setScore(nextScore);
     setSectionCompleted(nextSectionCompleted);
-    setQueue((prev) => [
-      ...prev.slice(1),
-      ...(wasCorrect ? [] : [term]),
-    ]);
+    setPhase(nextPhaseValue);
+    setQueue(nextQueue);
     setFeedback(null);
+    setWrittenInput("");
     if (shouldShowSummary) {
       setShowSectionSummary(true);
     }
   };
 
-  const answer = (value: string) => {
-    if (!current || feedback || showSectionSummary) return;
+  const answerMultipleChoice = (value: string) => {
+    if (!current || feedback || showSectionSummary || phase !== "multiple-choice") return;
     const correct = isCorrectAnswer(value, current.definition);
     playAnswerFeedback(correct);
     setFeedback({
@@ -706,6 +793,30 @@ function LearnMode({ set }: { set: StudySet }) {
       answer: current.definition,
       prompt: current.term,
       term: current,
+      phase,
+    });
+
+    if (correct) {
+      feedbackTimeoutRef.current = window.setTimeout(() => {
+        advanceLearn(current, true);
+        feedbackTimeoutRef.current = null;
+      }, 700);
+    }
+  };
+
+  const answerWritten = () => {
+    if (!current || feedback || showSectionSummary || phase !== "written") return;
+    const selected = writtenInput.trim();
+    if (!selected) return;
+    const correct = isCorrectAnswer(selected, current.term);
+    playAnswerFeedback(correct);
+    setFeedback({
+      status: correct ? "correct" : "wrong",
+      selected,
+      answer: current.term,
+      prompt: current.definition,
+      term: current,
+      phase,
     });
 
     if (correct) {
@@ -722,34 +833,79 @@ function LearnMode({ set }: { set: StudySet }) {
     advanceLearn(feedback.term, feedback.status === "correct");
   };
 
-  const restartLearn = () => {
-    clearFeedbackTimer();
-    setQueue(shuffle(set.terms));
-    setScore({ correct: 0, total: 0 });
-    setSectionCompleted([]);
-    setShowSectionSummary(false);
-    setFeedback(null);
-  };
+  const restartLearn = () => resetLearn(settings);
 
   const continueFromSummary = () => {
     setSectionCompleted([]);
     setShowSectionSummary(false);
   };
 
+  const renderSettings = () => (
+    <div className="learn-settings-wrap">
+      <button
+        className="learn-settings-button"
+        aria-expanded={settingsOpen}
+        aria-label="Learn settings"
+        onClick={() => setSettingsOpen((value) => !value)}
+      >
+        Settings
+      </button>
+      {settingsOpen && (
+        <div className="learn-settings-panel" role="dialog" aria-label="Learn settings panel">
+          <h3>Question types</h3>
+          <label className="switch-row">
+            <span>Shuffle</span>
+            <input
+              type="checkbox"
+              checked={settings.shuffle}
+              onChange={(event) => updateLearnSettings("shuffle", event.target.checked)}
+            />
+            <i />
+          </label>
+          <label className="switch-row">
+            <span>Multiple Choice</span>
+            <input
+              type="checkbox"
+              checked={settings.multipleChoice}
+              onChange={(event) => updateLearnSettings("multipleChoice", event.target.checked)}
+            />
+            <i />
+          </label>
+          <label className="switch-row">
+            <span>Written answers</span>
+            <input
+              type="checkbox"
+              checked={settings.written}
+              onChange={(event) => updateLearnSettings("written", event.target.checked)}
+            />
+            <i />
+          </label>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderHeader = () => (
+    <div className="learn-header">
+      <span>{phase === "multiple-choice" ? "Multiple choice" : "Written"}</span>
+      {renderSettings()}
+    </div>
+  );
+
   const renderProgress = () => {
-    const progressTotal = Math.max(1, set.terms.length);
     const completed = Math.min(progressTotal, score.total);
-    const segmentCount = Math.min(8, progressTotal);
-    const segments = Array.from(
-      { length: segmentCount },
-      (_, index) => (index + 1) / segmentCount <= completed / progressTotal,
-    );
+    const segmentCount = Math.max(1, Math.ceil(progressTotal / learnSectionSize));
+    const segments = Array.from({ length: segmentCount }, (_, index) => {
+      const segmentStart = index * learnSectionSize;
+      const segmentSize = Math.min(learnSectionSize, progressTotal - segmentStart);
+      return Math.max(0, Math.min(1, (completed - segmentStart) / segmentSize));
+    });
     return (
       <div className="learn-progress" aria-label="Learn progress">
         <div className="learn-progress-track">
-          {segments.map((filled, index) => (
+          {segments.map((fillAmount, index) => (
             <span
-              className={filled ? "filled" : ""}
+              style={{ "--learn-segment-fill": `${fillAmount * 100}%` } as CSSProperties}
               key={`${set.id}-learn-progress-${index}`}
             />
           ))}
@@ -762,7 +918,6 @@ function LearnMode({ set }: { set: StudySet }) {
   };
 
   const renderSummary = () => {
-    const progressTotal = Math.max(1, set.terms.length);
     const progressPercent = Math.round((Math.min(score.total, progressTotal) / progressTotal) * 100);
     return (
       <div className="learn-summary">
@@ -784,8 +939,8 @@ function LearnMode({ set }: { set: StudySet }) {
         </div>
         <h3>Terms studied in this round</h3>
         <div className="learn-summary-list">
-          {sectionCompleted.map((term) => (
-            <div className="learn-summary-row" key={`${term.id}-summary`}>
+          {sectionCompleted.map((term, index) => (
+            <div className="learn-summary-row" key={`${term.id}-summary-${index}`}>
               <span>{term.term}</span>
               <span>{term.definition}</span>
               <button
@@ -806,69 +961,105 @@ function LearnMode({ set }: { set: StudySet }) {
     );
   };
 
-  useEffect(() => {
-    clearFeedbackTimer();
-    setQueue(shuffle(set.terms));
-    setFeedback(null);
-    setScore({ correct: 0, total: 0 });
-    setSectionCompleted([]);
-    setShowSectionSummary(false);
-  }, [set.id, set.terms.length]);
-
   if (showSectionSummary) {
-    return <div className="learn-shell">{renderSummary()}</div>;
+    return (
+      <div className="learn-shell">
+        {renderHeader()}
+        {renderSummary()}
+      </div>
+    );
   }
 
   if (!current) {
     return (
-      <div className="panel empty-state">
-        <h2>Round complete</h2>
-        <button onClick={restartLearn}>Practice again</button>
+      <div className="learn-shell">
+        {renderHeader()}
+        <div className="panel empty-state">
+          <h2>Round complete</h2>
+          <button onClick={restartLearn}>Practice again</button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="learn-shell">
+      {renderHeader()}
       {renderProgress()}
       <div className="panel quiz-panel learn-panel">
         <div>
           <p className="eyebrow">
             {score.correct} correct of {score.total}
           </p>
-          <h2>{feedback?.prompt ?? current.term}</h2>
+          <h2>{feedback?.prompt ?? (phase === "multiple-choice" ? current.term : current.definition)}</h2>
         </div>
-        <div className="choice-grid">
-          {choices.map((choice) => {
-            const isSelected = feedback?.selected === choice;
-            const isCorrectAnswerChoice = feedback?.answer === choice;
-            const feedbackClass =
-              feedback?.status === "wrong" && isCorrectAnswerChoice
-                ? "choice-correct choice-reviewed"
-                : feedback?.status === "correct" && isCorrectAnswerChoice
-                  ? "choice-correct"
-                  : feedback?.status === "wrong" && isSelected
-                    ? "choice-wrong choice-reviewed"
-                    : "";
+        {phase === "multiple-choice" ? (
+          <div className="choice-grid">
+            {choices.map((choice) => {
+              const isSelected = feedback?.selected === choice;
+              const isCorrectAnswerChoice = feedback?.answer === choice;
+              const feedbackClass =
+                feedback?.status === "wrong" && isCorrectAnswerChoice
+                  ? "choice-correct choice-reviewed"
+                  : feedback?.status === "correct" && isCorrectAnswerChoice
+                    ? "choice-correct"
+                    : feedback?.status === "wrong" && isSelected
+                      ? "choice-wrong choice-reviewed"
+                      : "";
 
-            return (
-              <button
-                key={choice}
-                className={feedbackClass}
-                disabled={Boolean(feedback)}
-                onClick={() => answer(choice)}
-              >
-                {choice}
-              </button>
-            );
-          })}
-        </div>
+              return (
+                <button
+                  key={choice}
+                  className={feedbackClass}
+                  disabled={Boolean(feedback)}
+                  onClick={() => answerMultipleChoice(choice)}
+                >
+                  {choice}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <form
+            className="learn-written-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              answerWritten();
+            }}
+          >
+            <label htmlFor="learn-written-answer">Write the matching term</label>
+            <input
+              id="learn-written-answer"
+              value={writtenInput}
+              disabled={Boolean(feedback)}
+              onChange={(event) => setWrittenInput(event.target.value)}
+              autoComplete="off"
+            />
+            <button disabled={Boolean(feedback) || !writtenInput.trim()}>Check</button>
+          </form>
+        )}
         {feedback?.status === "correct" && <p className="result">Correct</p>}
         {feedback?.status === "wrong" && (
           <div className="learn-review">
             <p className="learn-review-message">No worries. Learning is a process.</p>
+            {feedback.phase === "written" && (
+              <div className="learn-review-grid">
+                <div className="learn-answer-card wrong-answer">
+                  <span>Your answer</span>
+                  <strong>{feedback.selected}</strong>
+                </div>
+                <div className="learn-answer-card correct-answer">
+                  <span>Correct answer</span>
+                  <strong>{feedback.answer}</strong>
+                </div>
+              </div>
+            )}
             <div className="learn-review-actions">
-              <span>Select the correct answer or press Continue</span>
+              <span>
+                {feedback.phase === "written"
+                  ? "Review the correction, then continue"
+                  : "Select the correct answer or press Continue"}
+              </span>
               <button onClick={continueLearn}>Continue</button>
             </div>
           </div>

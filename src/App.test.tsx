@@ -283,6 +283,75 @@ describe("App", () => {
     vi.useRealTimers();
   });
 
+  it("shows persisted Learn settings with requested defaults", () => {
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
+    fireEvent.click(screen.getByRole("button", { name: "Learn settings" }));
+
+    expect(screen.getByLabelText("Shuffle")).toBeChecked();
+    expect(screen.getByLabelText("Multiple Choice")).toBeChecked();
+    expect(screen.getByLabelText("Written answers")).not.toBeChecked();
+
+    fireEvent.click(screen.getByLabelText("Written answers"));
+
+    expect(screen.getByLabelText("Written answers")).toBeChecked();
+    expect(JSON.parse(localStorage.getItem("vocab-arcade:learn-settings") ?? "{}")).toMatchObject({
+      shuffle: true,
+      multipleChoice: true,
+      written: true,
+    });
+  });
+
+  it("runs written Learn answers after the multiple-choice pass when enabled", () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    seedSet();
+    render(<App />);
+    const answersByTerm = new Map([
+      ["one", "uno"],
+      ["two", "dos"],
+      ["three", "tres"],
+      ["four", "cuatro"],
+    ]);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
+    fireEvent.click(screen.getByRole("button", { name: "Learn settings" }));
+    fireEvent.click(screen.getByLabelText("Written answers"));
+
+    for (let index = 0; index < 4; index += 1) {
+      expect(screen.queryByLabelText("Write the matching term")).not.toBeInTheDocument();
+      const prompt = screen.getByRole("heading", { level: 2 }).textContent ?? "";
+      const answer = answersByTerm.get(prompt);
+      expect(answer).toBeDefined();
+      fireEvent.click(screen.getByRole("button", { name: answer }));
+      act(() => {
+        vi.advanceTimersByTime(700);
+      });
+    }
+
+    expect(screen.getByText("Written")).toBeInTheDocument();
+    expect(screen.getByLabelText("Write the matching term")).toBeInTheDocument();
+
+    random.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("can start Learn in written-only mode", () => {
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
+    fireEvent.click(screen.getByRole("button", { name: "Learn settings" }));
+    fireEvent.click(screen.getByLabelText("Multiple Choice"));
+
+    expect(screen.getByLabelText("Multiple Choice")).not.toBeChecked();
+    expect(screen.getByLabelText("Written answers")).toBeChecked();
+    expect(screen.getByText("Written")).toBeInTheDocument();
+    expect(screen.getByLabelText("Write the matching term")).toBeInTheDocument();
+  });
+
   it("keeps Learn multiple-choice only through the first section", () => {
     vi.useFakeTimers();
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
