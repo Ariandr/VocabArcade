@@ -255,14 +255,19 @@ kbd {
 }
 
 .set-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   justify-content: space-between;
   align-items: flex-start;
 }
 
 .set-header h1 {
-  max-width: 28ch;
-  font-size: clamp(1.8rem, 3.4vw, 3.1rem);
-  line-height: 1.04;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: clamp(1.45rem, 2.1vw, 2.2rem);
+  line-height: 1.12;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .danger {
