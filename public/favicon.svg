@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Vocab Arcade">
+  <rect width="64" height="64" rx="14" fill="#080724"/>
+  <rect x="17" y="14" width="26" height="32" rx="5" fill="#76daf2"/>
+  <rect x="22" y="18" width="28" height="34" rx="5" fill="#4d6bfe"/>
+  <path d="M30 29h13" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  <path d="M30 39h9" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  <path d="M17 47l-4 3 1-5-4-3 5-.4 2-4 2 4 5 .4-4 3 1 5z" fill="#9ad7cf"/>
+</svg>
