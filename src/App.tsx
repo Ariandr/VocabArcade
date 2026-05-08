@@ -305,7 +305,6 @@ function ImportScreen({
   sets: StudySet[];
   onOpenSet: (id: string) => void;
 }) {
-  const [sourceUrl, setSourceUrl] = useState("");
   const [manualText, setManualText] = useState("");
   const [error, setError] = useState("");
   const bookmarklet = useMemo(() => buildBookmarklet(currentAppUrl()), []);
@@ -331,19 +330,13 @@ function ImportScreen({
         <p className="eyebrow">Browser-only vocabulary practice</p>
         <h1>Import a study set and practice it with focused game modes.</h1>
         <p>
-          Paste a set link to prepare the bookmarklet workflow, or paste
-          term-definition data directly. Everything is saved on this device.
+          Drag the bookmarklet below to your bookmarks bar, then click it on any 
+          study set page to instantly import the terms. Everything is saved locally on this device.
         </p>
       </div>
 
       <div className="panel">
-        <label htmlFor="set-url">Study set link</label>
-        <input
-          id="set-url"
-          value={sourceUrl}
-          onChange={(event) => setSourceUrl(event.target.value)}
-          placeholder="https://example.com/study-set"
-        />
+        <h2>Bookmarklet Import</h2>
         <div className="steps">
           <span>
             1. Show your bookmarks bar: press <kbd>Cmd</kbd> + <kbd>Shift</kbd> +{" "}
@@ -357,14 +350,9 @@ function ImportScreen({
             If dragging fails, right-click it, copy the link address, and paste
             that address into a new bookmark.
           </span>
-          <span>3. Open the set page you can access.</span>
+          <span>3. Open any study set page.</span>
           <span>4. Click the bookmarklet while you are on that page.</span>
         </div>
-        {sourceUrl && (
-          <a className="button-link" href={sourceUrl} target="_blank" rel="noreferrer">
-            Open set page
-          </a>
-        )}
       </div>
 
       <div className="panel">

@@ -51,7 +51,7 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByText("Vocab Arcade")).toBeInTheDocument();
-    expect(screen.getByLabelText("Study set link")).toBeInTheDocument();
+
     expect(screen.getByText("Import to Vocab Arcade")).toBeInTheDocument();
   });
 
