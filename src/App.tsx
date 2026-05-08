@@ -547,17 +547,43 @@ function FlashcardsMode({ set }: { set: StudySet }) {
   const [cards, setCards] = useState(() => set.terms);
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
+  const [isFlipping, setIsFlipping] = useState(false);
+  const flipTimeoutRef = useRef<number | null>(null);
   const current = cards[index] ?? set.terms[0];
 
   useEffect(() => {
+    if (flipTimeoutRef.current) {
+      window.clearTimeout(flipTimeoutRef.current);
+      flipTimeoutRef.current = null;
+    }
     setCards(set.terms);
     setIndex(0);
     setFlipped(false);
+    setIsFlipping(false);
+    return () => {
+      if (flipTimeoutRef.current) {
+        window.clearTimeout(flipTimeoutRef.current);
+        flipTimeoutRef.current = null;
+      }
+    };
   }, [set.id, set.terms.length]);
+
+  const flipCard = () => {
+    if (isFlipping) return;
+    setIsFlipping(true);
+    flipTimeoutRef.current = window.setTimeout(() => {
+      setFlipped((value) => !value);
+      flipTimeoutRef.current = null;
+    }, 120);
+  };
 
   return (
     <div className="panel study-stage">
-      <button className="flashcard" onClick={() => setFlipped(!flipped)}>
+      <button
+        className={`flashcard ${isFlipping ? "flashcard-flipping" : ""}`}
+        onAnimationEnd={() => setIsFlipping(false)}
+        onClick={flipCard}
+      >
         <span>{flipped ? current.definition : current.term}</span>
         <small>Click to flip</small>
       </button>
