@@ -398,6 +398,16 @@ function StudyWorkspace({
   onSetChange: (set: StudySet) => void;
   onDelete: () => void;
 }) {
+  const [termLanguage, setTermLanguage] = useState<VoiceLanguage>(() => 
+    (localStorage.getItem("vocab-arcade:voice-term") as VoiceLanguage) || "auto"
+  );
+  const [definitionLanguage, setDefinitionLanguage] = useState<VoiceLanguage>(() => 
+    (localStorage.getItem("vocab-arcade:voice-def") as VoiceLanguage) || "auto"
+  );
+
+  const updateTermLang = (l: VoiceLanguage) => { setTermLanguage(l); localStorage.setItem("vocab-arcade:voice-term", l); };
+  const updateDefLang = (l: VoiceLanguage) => { setDefinitionLanguage(l); localStorage.setItem("vocab-arcade:voice-def", l); };
+
   return (
     <section className="workspace">
       <div className="set-header">
@@ -410,9 +420,39 @@ function StudyWorkspace({
             </a>
           )}
         </div>
-        <button className="danger" onClick={onDelete}>
-          Delete set
-        </button>
+        <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div className="voice-controls" aria-label="Voice settings">
+            <label>
+              Term voice
+              <select
+                value={termLanguage}
+                onChange={(event) => updateTermLang(event.target.value as VoiceLanguage)}
+              >
+                {(Object.keys(voiceLanguageLabels) as VoiceLanguage[]).map((language) => (
+                  <option key={language} value={language}>
+                    {voiceLanguageLabels[language]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Definition voice
+              <select
+                value={definitionLanguage}
+                onChange={(event) => updateDefLang(event.target.value as VoiceLanguage)}
+              >
+                {(Object.keys(voiceLanguageLabels) as VoiceLanguage[]).map((language) => (
+                  <option key={language} value={language}>
+                    {voiceLanguageLabels[language]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button className="danger" onClick={onDelete}>
+            Delete set
+          </button>
+        </div>
       </div>
 
       <div className="mode-grid" role="tablist" aria-label="Practice modes">
@@ -429,22 +469,20 @@ function StudyWorkspace({
         ))}
       </div>
 
-      {mode === "review" && <ReviewMode set={set} />}
+      {mode === "review" && <ReviewMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
       {mode === "edit" && <EditMode set={set} onSetChange={onSetChange} />}
-      {mode === "flashcards" && <FlashcardsMode set={set} />}
-      {mode === "learn" && <LearnMode set={set} />}
+      {mode === "flashcards" && <FlashcardsMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
+      {mode === "learn" && <LearnMode set={set} termLanguage={termLanguage} />}
       {mode === "test" && <TestMode set={set} />}
       {mode === "match" && <MatchMode set={set} />}
       {mode === "blocks" && <BlocksMode set={set} />}
-      {mode === "blast" && <BlastMode set={set} onExit={() => onModeChange("review")} />}
+      {mode === "blast" && <BlastMode set={set} termLanguage={termLanguage} onExit={() => onModeChange("review")} />}
     </section>
   );
 }
 
-function ReviewMode({ set }: { set: StudySet }) {
+function ReviewMode({ set, termLanguage, definitionLanguage }: { set: StudySet; termLanguage: VoiceLanguage; definitionLanguage: VoiceLanguage }) {
   const [query, setQuery] = useState("");
-  const [termLanguage, setTermLanguage] = useState<VoiceLanguage>("auto");
-  const [definitionLanguage, setDefinitionLanguage] = useState<VoiceLanguage>("auto");
   const visibleTerms = set.terms.filter((term) =>
     `${term.term} ${term.definition}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
   );
@@ -458,34 +496,6 @@ function ReviewMode({ set }: { set: StudySet }) {
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search terms"
         />
-        <div className="voice-controls" aria-label="Voice settings">
-          <label>
-            Term voice
-            <select
-              value={termLanguage}
-              onChange={(event) => setTermLanguage(event.target.value as VoiceLanguage)}
-            >
-              {(Object.keys(voiceLanguageLabels) as VoiceLanguage[]).map((language) => (
-                <option key={language} value={language}>
-                  {voiceLanguageLabels[language]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Definition voice
-            <select
-              value={definitionLanguage}
-              onChange={(event) => setDefinitionLanguage(event.target.value as VoiceLanguage)}
-            >
-              {(Object.keys(voiceLanguageLabels) as VoiceLanguage[]).map((language) => (
-                <option key={language} value={language}>
-                  {voiceLanguageLabels[language]}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
       </div>
       <div className="review-list">
         {visibleTerms.map((term) => (
@@ -584,7 +594,7 @@ function EditMode({ set, onSetChange }: { set: StudySet; onSetChange: (set: Stud
   );
 }
 
-function FlashcardsMode({ set }: { set: StudySet }) {
+function FlashcardsMode({ set, termLanguage, definitionLanguage }: { set: StudySet; termLanguage: VoiceLanguage; definitionLanguage: VoiceLanguage }) {
   const [cards, setCards] = useState(() => set.terms);
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -642,7 +652,7 @@ function FlashcardsMode({ set }: { set: StudySet }) {
         >
           Shuffle
         </button>
-        <button onClick={() => current && speakText(flipped ? current.definition : current.term)}>
+        <button onClick={() => current && speakText(flipped ? current.definition : current.term, flipped ? definitionLanguage : termLanguage)}>
           Speak
         </button>
       </div>
@@ -672,7 +682,7 @@ function learnProgressTotal(settings: LearnSettings, termCount: number): number 
   );
 }
 
-function LearnMode({ set }: { set: StudySet }) {
+function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLanguage }) {
   const learnSectionSize = 7;
   const [settings, setSettings] = useState<LearnSettings>(() => loadLearnSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -934,7 +944,7 @@ function LearnMode({ set }: { set: StudySet }) {
               <button
                 aria-label={`Speak ${term.term}`}
                 className="icon-button"
-                onClick={() => speakText(term.term)}
+                onClick={() => speakText(term.term, termLanguage)}
               >
                 Speak
               </button>
@@ -1353,7 +1363,7 @@ function BlocksMode({ set }: { set: StudySet }) {
   );
 }
 
-function BlastMode({ set, onExit }: { set: StudySet; onExit: () => void }) {
+function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage: VoiceLanguage; onExit: () => void }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const shipRef = useRef<HTMLDivElement>(null);
   const cannonRef = useRef<HTMLElement>(null);
@@ -1417,7 +1427,7 @@ function BlastMode({ set, onExit }: { set: StudySet; onExit: () => void }) {
     setShot(null);
     setLocked(false);
     setMessage("Pick the matching definition.");
-    if (!muted) speakText(current.term);
+    if (!muted) speakText(current.term, termLanguage);
   }, [complete, current?.id, muted, round, set]);
 
   useEffect(() => {
