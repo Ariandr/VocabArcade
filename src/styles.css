@@ -386,6 +386,11 @@ kbd {
   color: #fff;
 }
 
+.flashcard:hover {
+  background: #303856;
+  transform: none;
+}
+
 .flashcard span {
   max-width: 100%;
   overflow-wrap: anywhere;
