@@ -28,6 +28,25 @@ describe("App", () => {
     );
   };
 
+  const seedLargeSet = () => {
+    localStorage.setItem(
+      "vocab-arcade:sets",
+      JSON.stringify([
+        {
+          id: "set-large",
+          title: "Large Numbers",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          terms: Array.from({ length: 8 }, (_, index) => ({
+            id: `term-${index + 1}`,
+            term: `term ${index + 1}`,
+            definition: `definition ${index + 1}`,
+          })),
+        },
+      ]),
+    );
+  };
+
   it("renders the import flow", () => {
     render(<App />);
 
@@ -238,7 +257,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(screen.queryByText("No worries. Learning is a process.")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "tres" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "three" })).toBeInTheDocument();
     expect(screen.getByText("1 / 4")).toBeInTheDocument();
     random.mockRestore();
   });
@@ -252,37 +271,74 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
     fireEvent.click(screen.getByRole("button", { name: "dos" }));
     expect(screen.getByRole("heading", { name: "two" })).toBeInTheDocument();
-    expect(screen.getByText("1 / 4")).toBeInTheDocument();
+    expect(screen.getByText("0 / 4")).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(700);
     });
 
-    expect(screen.getByRole("heading", { name: "tres" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "three" })).toBeInTheDocument();
+    expect(screen.getByText("1 / 4")).toBeInTheDocument();
     random.mockRestore();
     vi.useRealTimers();
   });
 
-  it("keeps typed Learn corrections in typed layout", () => {
+  it("keeps Learn multiple-choice only through the first section", () => {
     vi.useFakeTimers();
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
-    seedSet();
+    seedLargeSet();
     render(<App />);
+    const answersByTerm = new Map(
+      Array.from({ length: 8 }, (_, index) => [`term ${index + 1}`, `definition ${index + 1}`]),
+    );
 
     fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
-    fireEvent.click(screen.getByRole("button", { name: "dos" }));
-    act(() => {
-      vi.advanceTimersByTime(700);
-    });
 
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "wrong" } });
-    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+    for (let index = 0; index < 7; index += 1) {
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+      const prompt = screen.getByRole("heading", { level: 2 }).textContent ?? "";
+      const answer = answersByTerm.get(prompt);
+      expect(answer).toBeDefined();
+      fireEvent.click(screen.getByRole("button", { name: answer }));
+      act(() => {
+        vi.advanceTimersByTime(700);
+      });
+    }
 
-    expect(screen.getByText("Your answer")).toBeInTheDocument();
-    expect(screen.getByText("Correct answer")).toBeInTheDocument();
-    expect(screen.getByText("wrong")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "uno" })).not.toBeInTheDocument();
+    expect(screen.getByText("Going strong. You can do this!")).toBeInTheDocument();
+    expect(screen.getByText("Total set progress:")).toBeInTheDocument();
+    expect(screen.getByText("88%")).toBeInTheDocument();
+    expect(screen.getByText("Terms studied in this round")).toBeInTheDocument();
+    expect(screen.getByText("term 2")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
+
+    random.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("continues Learn after a section summary", () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    seedLargeSet();
+    render(<App />);
+    const answersByTerm = new Map(
+      Array.from({ length: 8 }, (_, index) => [`term ${index + 1}`, `definition ${index + 1}`]),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
+    for (let index = 0; index < 7; index += 1) {
+      const prompt = screen.getByRole("heading", { level: 2 }).textContent ?? "";
+      fireEvent.click(screen.getByRole("button", { name: answersByTerm.get(prompt) }));
+      act(() => {
+        vi.advanceTimersByTime(700);
+      });
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(screen.queryByText("Going strong. You can do this!")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
 
     random.mockRestore();
     vi.useRealTimers();

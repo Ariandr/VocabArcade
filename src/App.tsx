@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import type { ImportPayload, StudySet, StudyTerm } from "./types";
 import { buildBookmarklet } from "./lib/bookmarklet";
 import {
@@ -643,23 +643,21 @@ function FlashcardsMode({ set }: { set: StudySet }) {
 }
 
 function LearnMode({ set }: { set: StudySet }) {
+  const learnSectionSize = 7;
   const [queue, setQueue] = useState(() => shuffle(set.terms));
-  const [input, setInput] = useState("");
   const [score, setScore] = useState({ correct: 0, total: 0 });
+  const [sectionCompleted, setSectionCompleted] = useState<StudyTerm[]>([]);
+  const [showSectionSummary, setShowSectionSummary] = useState(false);
   const [feedback, setFeedback] = useState<{
     status: "correct" | "wrong";
     selected: string;
     answer: string;
     prompt: string;
-    typedRound: boolean;
     term: StudyTerm;
   } | null>(null);
   const feedbackTimeoutRef = useRef<number | null>(null);
   const current = queue[0];
   const choices = useMemo(() => (current ? choicesForTerm(set, current) : []), [set, current]);
-  const visibleRoundIndex = Math.max(0, score.total - (feedback ? 1 : 0));
-  const typedRound = visibleRoundIndex % 2 === 1;
-  const activeTypedRound = feedback?.typedRound ?? typedRound;
 
   useEffect(() => {
     return () => {
@@ -670,27 +668,49 @@ function LearnMode({ set }: { set: StudySet }) {
     };
   }, []);
 
+  const clearFeedbackTimer = () => {
+    if (feedbackTimeoutRef.current) {
+      window.clearTimeout(feedbackTimeoutRef.current);
+      feedbackTimeoutRef.current = null;
+    }
+  };
+
+  const advanceLearn = (term: StudyTerm, wasCorrect: boolean) => {
+    const nextSectionCompleted = [...sectionCompleted, term];
+    const nextTotal = score.total + 1;
+    const shouldShowSummary =
+      nextSectionCompleted.length >= learnSectionSize || nextTotal >= set.terms.length;
+
+    setScore((prev) => ({
+      correct: prev.correct + (wasCorrect ? 1 : 0),
+      total: prev.total + 1,
+    }));
+    setSectionCompleted(nextSectionCompleted);
+    setQueue((prev) => [
+      ...prev.slice(1),
+      ...(wasCorrect ? [] : [term]),
+    ]);
+    setFeedback(null);
+    if (shouldShowSummary) {
+      setShowSectionSummary(true);
+    }
+  };
+
   const answer = (value: string) => {
-    if (!current || feedback) return;
-    const prompt = typedRound ? current.definition : current.term;
-    const expectedAnswer = typedRound ? current.term : current.definition;
-    const correct = isCorrectAnswer(value, expectedAnswer);
+    if (!current || feedback || showSectionSummary) return;
+    const correct = isCorrectAnswer(value, current.definition);
     playAnswerFeedback(correct);
     setFeedback({
       status: correct ? "correct" : "wrong",
       selected: value,
-      answer: expectedAnswer,
-      prompt,
-      typedRound,
+      answer: current.definition,
+      prompt: current.term,
       term: current,
     });
 
     if (correct) {
-      setScore((prev) => ({ correct: prev.correct + 1, total: prev.total + 1 }));
       feedbackTimeoutRef.current = window.setTimeout(() => {
-        setQueue((prev) => prev.slice(1));
-        setInput("");
-        setFeedback(null);
+        advanceLearn(current, true);
         feedbackTimeoutRef.current = null;
       }, 700);
     }
@@ -698,30 +718,22 @@ function LearnMode({ set }: { set: StudySet }) {
 
   const continueLearn = () => {
     if (!feedback) return;
-    if (feedbackTimeoutRef.current) {
-      window.clearTimeout(feedbackTimeoutRef.current);
-      feedbackTimeoutRef.current = null;
-    }
-    setQueue((prev) => [
-      ...prev.slice(1),
-      ...(feedback.status === "wrong" ? [feedback.term] : []),
-    ]);
-    if (feedback.status === "wrong") {
-      setScore((prev) => ({ correct: prev.correct, total: prev.total + 1 }));
-    }
-    setInput("");
-    setFeedback(null);
+    clearFeedbackTimer();
+    advanceLearn(feedback.term, feedback.status === "correct");
   };
 
   const restartLearn = () => {
-    if (feedbackTimeoutRef.current) {
-      window.clearTimeout(feedbackTimeoutRef.current);
-      feedbackTimeoutRef.current = null;
-    }
+    clearFeedbackTimer();
     setQueue(shuffle(set.terms));
-    setInput("");
     setScore({ correct: 0, total: 0 });
+    setSectionCompleted([]);
+    setShowSectionSummary(false);
     setFeedback(null);
+  };
+
+  const continueFromSummary = () => {
+    setSectionCompleted([]);
+    setShowSectionSummary(false);
   };
 
   const renderProgress = () => {
@@ -749,16 +761,63 @@ function LearnMode({ set }: { set: StudySet }) {
     );
   };
 
+  const renderSummary = () => {
+    const progressTotal = Math.max(1, set.terms.length);
+    const progressPercent = Math.round((Math.min(score.total, progressTotal) / progressTotal) * 100);
+    return (
+      <div className="learn-summary">
+        <h2>Going strong. You can do this!</h2>
+        <p>
+          Total set progress: <strong>{progressPercent}%</strong>
+        </p>
+        <div
+          className="learn-summary-bar"
+          style={{ "--summary-correct-position": `${progressPercent}%` } as CSSProperties}
+        >
+          <span style={{ width: `${progressPercent}%` }} />
+          <strong>{score.correct}</strong>
+          <em>{progressTotal}</em>
+        </div>
+        <div className="learn-summary-labels">
+          <span>Correct</span>
+          <span>Total questions</span>
+        </div>
+        <h3>Terms studied in this round</h3>
+        <div className="learn-summary-list">
+          {sectionCompleted.map((term) => (
+            <div className="learn-summary-row" key={`${term.id}-summary`}>
+              <span>{term.term}</span>
+              <span>{term.definition}</span>
+              <button
+                aria-label={`Speak ${term.term}`}
+                className="icon-button"
+                onClick={() => speakText(term.term)}
+              >
+                Speak
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="learn-review-actions">
+          <span>Press Continue to keep practicing</span>
+          <button onClick={continueFromSummary}>Continue</button>
+        </div>
+      </div>
+    );
+  };
+
   useEffect(() => {
-    if (feedbackTimeoutRef.current) {
-      window.clearTimeout(feedbackTimeoutRef.current);
-      feedbackTimeoutRef.current = null;
-    }
+    clearFeedbackTimer();
     setQueue(shuffle(set.terms));
-    setInput("");
     setFeedback(null);
     setScore({ correct: 0, total: 0 });
+    setSectionCompleted([]);
+    setShowSectionSummary(false);
   }, [set.id, set.terms.length]);
+
+  if (showSectionSummary) {
+    return <div className="learn-shell">{renderSummary()}</div>;
+  }
 
   if (!current) {
     return (
@@ -777,65 +836,37 @@ function LearnMode({ set }: { set: StudySet }) {
           <p className="eyebrow">
             {score.correct} correct of {score.total}
           </p>
-          <h2>{feedback?.prompt ?? (activeTypedRound ? current.definition : current.term)}</h2>
+          <h2>{feedback?.prompt ?? current.term}</h2>
         </div>
-        {activeTypedRound ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              answer(input);
-            }}
-          >
-            <input
-              value={input}
-              disabled={Boolean(feedback)}
-              onChange={(event) => setInput(event.target.value)}
-            />
-            <button disabled={Boolean(feedback)}>Check</button>
-          </form>
-        ) : (
-          <div className="choice-grid">
-            {choices.map((choice) => {
-              const isSelected = feedback?.selected === choice;
-              const isCorrectAnswerChoice = feedback?.answer === choice;
-              const feedbackClass =
-                feedback?.status === "wrong" && isCorrectAnswerChoice
-                  ? "choice-correct choice-reviewed"
-                  : feedback?.status === "correct" && isCorrectAnswerChoice
-                    ? "choice-correct"
-                    : feedback?.status === "wrong" && isSelected
-                      ? "choice-wrong choice-reviewed"
-                      : "";
+        <div className="choice-grid">
+          {choices.map((choice) => {
+            const isSelected = feedback?.selected === choice;
+            const isCorrectAnswerChoice = feedback?.answer === choice;
+            const feedbackClass =
+              feedback?.status === "wrong" && isCorrectAnswerChoice
+                ? "choice-correct choice-reviewed"
+                : feedback?.status === "correct" && isCorrectAnswerChoice
+                  ? "choice-correct"
+                  : feedback?.status === "wrong" && isSelected
+                    ? "choice-wrong choice-reviewed"
+                    : "";
 
-              return (
-                <button
-                  key={choice}
-                  className={feedbackClass}
-                  disabled={Boolean(feedback)}
-                  onClick={() => answer(choice)}
-                >
-                  {choice}
-                </button>
-              );
-            })}
-          </div>
-        )}
+            return (
+              <button
+                key={choice}
+                className={feedbackClass}
+                disabled={Boolean(feedback)}
+                onClick={() => answer(choice)}
+              >
+                {choice}
+              </button>
+            );
+          })}
+        </div>
         {feedback?.status === "correct" && <p className="result">Correct</p>}
         {feedback?.status === "wrong" && (
           <div className="learn-review">
             <p className="learn-review-message">No worries. Learning is a process.</p>
-            {feedback.typedRound && (
-              <div className="learn-review-grid">
-                <div className="learn-answer-card wrong-answer">
-                  <span>Your answer</span>
-                  <strong>{feedback.selected || "No answer"}</strong>
-                </div>
-                <div className="learn-answer-card correct-answer">
-                  <span>Correct answer</span>
-                  <strong>{feedback.answer}</strong>
-                </div>
-              </div>
-            )}
             <div className="learn-review-actions">
               <span>Select the correct answer or press Continue</span>
               <button onClick={continueLearn}>Continue</button>
