@@ -5,6 +5,7 @@ const HEADER_TERMS = new Set(["term", "terms", "word", "front"]);
 const HEADER_DEFINITIONS = new Set(["definition", "definitions", "meaning", "back"]);
 const IGNORED_EXACT_PAIRS = new Set(["get a hint"]);
 const PAGE_CONTROL_FRAGMENTS = [
+  "free 7-day trial",
   "still learning",
   "not studied",
   "you've begun learning",
@@ -16,6 +17,7 @@ const PAGE_CONTROL_FRAGMENTS = [
   "don't know?",
   "search for a question",
 ];
+const BLOCKED_CONTROL_FRAGMENTS = ["free 7-day trial", "none of that", "why, you"];
 
 export function makeId(prefix = "id"): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -62,7 +64,10 @@ export function isIgnoredTermPair(term: string, definition: string): boolean {
 function isPageControlBlock(value: string): boolean {
   const hits = PAGE_CONTROL_FRAGMENTS.filter((fragment) => value.includes(fragment)).length;
   return (
+    value === "search" ||
+    BLOCKED_CONTROL_FRAGMENTS.some((fragment) => value.includes(fragment)) ||
     hits >= 2 ||
+    value.startsWith("upgrade") ||
     value.startsWith("still learning") ||
     value.startsWith("not studied") ||
     value.startsWith("terms in this set")

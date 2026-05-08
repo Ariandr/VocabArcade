@@ -26,6 +26,8 @@ describe("import helpers", () => {
         term: "Still learning (7) You've begun learning these terms. Keep up the good work! Select these 7 hedge knight ought to",
         definition: "зачерпнути, загрібати",
       },
+      { term: "Search", definition: "Upgrade: Free 7-day trial" },
+      { term: "hedge 1 none of that! 3", definition: "Why, you...! 2 septon 4" },
       { term: "hedgeживопліт; огорожа", definition: "живопліт; огорожа" },
       { term: "knightлицар", definition: "лицар" },
     ]);

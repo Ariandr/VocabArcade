@@ -8,6 +8,7 @@ export function buildBookmarklet(appUrl: string): string {
   const APP_ORIGIN = new URL(APP_URL).origin;
   const clean = (value) => String(value || "").replace(/\\s+/g, " ").trim();
   const pageControlFragments = [
+    "free 7-day trial",
     "still learning",
     "not studied",
     "you've begun learning",
@@ -19,10 +20,11 @@ export function buildBookmarklet(appUrl: string): string {
     "don't know?",
     "search for a question"
   ];
+  const blockedControlFragments = ["free 7-day trial", "none of that", "why, you"];
   const isControlBlock = (value) => {
     const text = clean(value).toLocaleLowerCase();
     const hits = pageControlFragments.filter((fragment) => text.includes(fragment)).length;
-    return hits >= 2 || text.startsWith("still learning") || text.startsWith("not studied") || text.startsWith("terms in this set");
+    return text === "search" || blockedControlFragments.some((fragment) => text.includes(fragment)) || hits >= 2 || text.startsWith("upgrade") || text.startsWith("still learning") || text.startsWith("not studied") || text.startsWith("terms in this set");
   };
   const isControlText = (value) => {
     const text = clean(value).toLocaleLowerCase();
@@ -51,6 +53,17 @@ export function buildBookmarklet(appUrl: string): string {
     if (term && definition && !pairs.some((item) => item.term === term && item.definition === definition)) {
       pairs.push({ term, definition });
     }
+  };
+  const exactSideText = (side) => {
+    const textNode = side.querySelector(".TermText, [class*='TermText'], .FormattedText, [class*='FormattedText']");
+    return clean(textNode?.textContent || side.textContent);
+  };
+  const addExactLayoutPairs = () => {
+    document.querySelectorAll(".SetPageTermsList-term").forEach((row) => {
+      const sides = Array.from(row.querySelectorAll("[data-testid='set-page-term-card-side']"));
+      if (sides.length < 2) return;
+      add(exactSideText(sides[0]), exactSideText(sides[1]));
+    });
   };
   const textItemsIn = (root) => {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -117,12 +130,13 @@ export function buildBookmarklet(appUrl: string): string {
       if (child && typeof child === "object") parseCandidates(child);
     }
   };
-  addLayoutPairs();
-  if (pairs.length < 2) document.querySelectorAll("script[type='application/json'], script#__NEXT_DATA__").forEach((script) => {
+  addExactLayoutPairs();
+  document.querySelectorAll("script[type='application/json'], script#__NEXT_DATA__").forEach((script) => {
     try {
       parseCandidates(JSON.parse(script.textContent || ""));
     } catch {}
   });
+  if (pairs.length < 2) addLayoutPairs();
   if (pairs.length === 0) {
     alert("No term-definition pairs were found on this page.");
     return;
