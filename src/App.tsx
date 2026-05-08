@@ -659,6 +659,7 @@ function LearnMode({ set }: { set: StudySet }) {
   const choices = useMemo(() => (current ? choicesForTerm(set, current) : []), [set, current]);
   const visibleRoundIndex = Math.max(0, score.total - (feedback ? 1 : 0));
   const typedRound = visibleRoundIndex % 2 === 1;
+  const activeTypedRound = feedback?.typedRound ?? typedRound;
 
   useEffect(() => {
     return () => {
@@ -776,9 +777,9 @@ function LearnMode({ set }: { set: StudySet }) {
           <p className="eyebrow">
             {score.correct} correct of {score.total}
           </p>
-          <h2>{feedback?.prompt ?? (typedRound ? current.definition : current.term)}</h2>
+          <h2>{feedback?.prompt ?? (activeTypedRound ? current.definition : current.term)}</h2>
         </div>
-        {typedRound ? (
+        {activeTypedRound ? (
           <form
             onSubmit={(event) => {
               event.preventDefault();

@@ -262,4 +262,29 @@ describe("App", () => {
     random.mockRestore();
     vi.useRealTimers();
   });
+
+  it("keeps typed Learn corrections in typed layout", () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
+    fireEvent.click(screen.getByRole("button", { name: "dos" }));
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "wrong" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check" }));
+
+    expect(screen.getByText("Your answer")).toBeInTheDocument();
+    expect(screen.getByText("Correct answer")).toBeInTheDocument();
+    expect(screen.getByText("wrong")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "uno" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
+
+    random.mockRestore();
+    vi.useRealTimers();
+  });
 });
