@@ -1334,19 +1334,6 @@ kbd {
   transform: none;
 }
 
-.asteroid-speak {
-  position: absolute;
-  right: 0.2rem;
-  bottom: 0.2rem;
-  z-index: 3;
-  width: 2rem;
-  min-width: 2rem;
-  height: 2rem;
-  min-height: 2rem;
-  background: rgba(8, 9, 42, 0.36);
-  font-size: 0.85rem;
-}
-
 .asteroid-hit {
   background: #59d69a;
   border-color: #b8ffd7;

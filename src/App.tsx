@@ -770,7 +770,7 @@ function StudyWorkspace({
       {mode === "test" && <TestMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
       {mode === "match" && <MatchMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
       {mode === "blocks" && <BlocksMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
-      {mode === "blast" && <BlastMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} onExit={() => onModeChange("review")} />}
+      {mode === "blast" && <BlastMode set={set} termLanguage={termLanguage} onExit={() => onModeChange("review")} />}
     </section>
   );
 }
@@ -1778,12 +1778,10 @@ function BlocksMode({
 function BlastMode({
   set,
   termLanguage,
-  definitionLanguage,
   onExit,
 }: {
   set: StudySet;
   termLanguage: VoiceLanguage;
-  definitionLanguage: VoiceLanguage;
   onExit: () => void;
 }) {
   const { t } = useI18n();
@@ -2035,12 +2033,6 @@ function BlastMode({
             >
               {target.text}
             </button>
-            <SpeakButton
-              text={target.text}
-              language={definitionLanguage}
-              label={t("voice.speakDefinition")}
-              className="pronounce-button asteroid-speak"
-            />
           </div>
         ))}
         <div className="ship" aria-hidden="true" ref={shipRef}>
