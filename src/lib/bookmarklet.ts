@@ -1,4 +1,19 @@
-export function buildBookmarklet(appUrl: string): string {
+type BookmarkletMessages = {
+  noPairs: string;
+  errorPrefix: string;
+  errorSuffix: string;
+};
+
+const defaultBookmarkletMessages: BookmarkletMessages = {
+  noPairs: "No term-definition pairs were found on this page.",
+  errorPrefix: "Vocab Arcade Bookmarklet Error: ",
+  errorSuffix: "Please let the developer know!",
+};
+
+export function buildBookmarklet(
+  appUrl: string,
+  messages: BookmarkletMessages = defaultBookmarkletMessages,
+): string {
   const appImportUrl = new URL(appUrl);
   appImportUrl.hash = "/import";
   appImportUrl.search = "";
@@ -6,6 +21,7 @@ export function buildBookmarklet(appUrl: string): string {
   const code = `(() => {
   const APP_URL = ${JSON.stringify(appImportUrl.toString())};
   const APP_ORIGIN = new URL(APP_URL).origin;
+  const MESSAGES = ${JSON.stringify(messages)};
   try {
     const clean = (value) => String(value || "").replace(/\\s+/g, " ").trim();
     const pageControlFragments = [
@@ -249,7 +265,7 @@ export function buildBookmarklet(appUrl: string): string {
     if (pairs.length < 2) addPairsByIcons();
     if (pairs.length < 2) addLayoutPairs();
     if (pairs.length === 0) {
-      alert("No term-definition pairs were found on this page.");
+      alert(MESSAGES.noPairs);
       return;
     }
     const payload = {
@@ -266,7 +282,7 @@ export function buildBookmarklet(appUrl: string): string {
     setTimeout(send, 1500);
     setTimeout(send, 3000);
   } catch (err) {
-    alert("Vocab Arcade Bookmarklet Error: " + err.message + "\\n\\nPlease let the developer know!");
+    alert(MESSAGES.errorPrefix + err.message + "\\n\\n" + MESSAGES.errorSuffix);
   }
 })();`;
 

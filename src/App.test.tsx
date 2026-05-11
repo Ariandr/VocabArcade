@@ -55,6 +55,115 @@ describe("App", () => {
     expect(screen.getByText("Import to Vocab Arcade")).toBeInTheDocument();
   });
 
+  it("uses English as the default interface language", () => {
+    render(<App />);
+
+    expect(screen.getByLabelText("Interface language")).toHaveValue("en");
+    expect(screen.getByText("Bookmarklet Import")).toBeInTheDocument();
+    expect(screen.getByText("Import pasted data")).toBeInTheDocument();
+  });
+
+  it("switches to Ukrainian and stores the selected language", () => {
+    const { unmount } = render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Interface language"), {
+      target: { value: "uk" },
+    });
+
+    expect(localStorage.getItem("vocab-arcade:ui-language")).toBe("uk");
+    expect(screen.getByText("Імпорт через букмарклет")).toBeInTheDocument();
+    expect(screen.getByText("Імпортувати вставлені дані")).toBeInTheDocument();
+
+    unmount();
+    render(<App />);
+
+    expect(screen.getByLabelText("Мова інтерфейсу")).toHaveValue("uk");
+    expect(screen.getByText("Імпорт через букмарклет")).toBeInTheDocument();
+  });
+
+  it("switches to Polish and stores the selected language", () => {
+    const { unmount } = render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Interface language"), {
+      target: { value: "pl" },
+    });
+
+    expect(localStorage.getItem("vocab-arcade:ui-language")).toBe("pl");
+    expect(screen.getByText("Import przez bookmarklet")).toBeInTheDocument();
+    expect(screen.getByText("Importuj wklejone dane")).toBeInTheDocument();
+
+    unmount();
+    render(<App />);
+
+    expect(screen.getByLabelText("Język interfejsu")).toHaveValue("pl");
+    expect(screen.getByText("Import przez bookmarklet")).toBeInTheDocument();
+  });
+
+  it("localizes workspace controls and accessible labels", () => {
+    seedSet();
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Interface language"), {
+      target: { value: "uk" },
+    });
+
+    expect(screen.getByRole("tab", { name: "Огляд набору" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Навчання" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Налаштування озвучення")).toBeInTheDocument();
+    expect(screen.getByLabelText("Пошук термінів")).toBeInTheDocument();
+  });
+
+  it("localizes interpolated import notices", () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Interface language"), {
+      target: { value: "uk" },
+    });
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            source: "vocab-arcade-bookmarklet",
+            payload: {
+              title: "Numbers",
+              sourceUrl: "https://example.com/localized-study-set",
+              terms: [{ term: "one", definition: "uno" }],
+            },
+          },
+        }),
+      );
+    });
+
+    expect(screen.getByText('Імпортовано 1 термін у "Numbers".')).toBeInTheDocument();
+  });
+
+  it("localizes Polish interpolated import notices with plural terms", () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Interface language"), {
+      target: { value: "pl" },
+    });
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            source: "vocab-arcade-bookmarklet",
+            payload: {
+              title: "Numbers",
+              sourceUrl: "https://example.com/polish-localized-study-set",
+              terms: [
+                { term: "one", definition: "uno" },
+                { term: "two", definition: "dos" },
+              ],
+            },
+          },
+        }),
+      );
+    });
+
+    expect(screen.getByText('Zaimportowano 2 terminy do "Numbers".')).toBeInTheDocument();
+  });
+
   it("ignores repeated bookmarklet messages for the same import", () => {
     render(<App />);
     const message = {

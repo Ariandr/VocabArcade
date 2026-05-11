@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from "react";
 import type { ImportPayload, StudySet, StudyTerm } from "./types";
 import { buildBookmarklet } from "./lib/bookmarklet";
 import {
@@ -29,6 +38,16 @@ import {
   saveSets,
   type LearnSettings,
 } from "./lib/storage";
+import {
+  appLocaleLabels,
+  appLocales,
+  loadAppLocale,
+  saveAppLocale,
+  translate,
+  type AppLocale,
+  type TranslationKey,
+  type TranslationParams,
+} from "./lib/i18n";
 
 type Mode =
   | "review"
@@ -40,16 +59,32 @@ type Mode =
   | "blocks"
   | "blast";
 
-const modeLabels: Record<Mode, string> = {
-  review: "Set Review",
-  edit: "Set Edit",
-  flashcards: "Flashcards",
-  learn: "Learn",
-  test: "Test",
-  match: "Match",
-  blocks: "Blocks",
-  blast: "Blast",
+const modeLabelKeys: Record<Mode, TranslationKey> = {
+  review: "mode.review",
+  edit: "mode.edit",
+  flashcards: "mode.flashcards",
+  learn: "mode.learn",
+  test: "mode.test",
+  match: "mode.match",
+  blocks: "mode.blocks",
+  blast: "mode.blast",
 };
+
+type I18nContextValue = {
+  locale: AppLocale;
+  setLocale: (locale: AppLocale) => void;
+  t: (key: TranslationKey, params?: TranslationParams) => string;
+};
+
+const I18nContext = createContext<I18nContextValue | null>(null);
+
+function useI18n(): I18nContextValue {
+  const context = useContext(I18nContext);
+  if (!context) {
+    throw new Error("I18nContext is not available.");
+  }
+  return context;
+}
 
 function currentAppUrl(): string {
   return window.location.href.split("#")[0];
@@ -68,11 +103,11 @@ function setSignature(set: StudySet): string {
 type VoiceLanguage = "auto" | "en-US" | "pl-PL" | "uk-UA";
 let activeUtterance: SpeechSynthesisUtterance | null = null;
 
-const voiceLanguageLabels: Record<VoiceLanguage, string> = {
-  auto: "Auto",
-  "en-US": "English",
-  "pl-PL": "Polish",
-  "uk-UA": "Ukrainian",
+const voiceLanguageLabels: Record<VoiceLanguage, TranslationKey> = {
+  auto: "voice.auto",
+  "en-US": "voice.english",
+  "pl-PL": "voice.polish",
+  "uk-UA": "voice.ukrainian",
 };
 
 function detectVoiceLanguage(text: string): Exclude<VoiceLanguage, "auto"> {
@@ -159,7 +194,43 @@ function playAnswerFeedback(correct: boolean) {
   }
 }
 
+function importErrorMessage(
+  t: I18nContextValue["t"],
+  error: unknown,
+  fallbackKey: TranslationKey,
+): string {
+  if (!(error instanceof Error)) return t(fallbackKey);
+  if (error.message === "No valid term-definition pairs were found.") {
+    return t("error.noValidPairs");
+  }
+  if (error.message === "Paste study data before importing.") {
+    return t("error.emptyPaste");
+  }
+  if (error.message === "Unsupported import format.") {
+    return t("error.unsupportedImport");
+  }
+  return error.message || t(fallbackKey);
+}
+
+function pluralTermKey(locale: AppLocale, count: number): TranslationKey {
+  if (locale === "uk" || locale === "pl") {
+    const lastTwo = count % 100;
+    const last = count % 10;
+    if (lastTwo >= 11 && lastTwo <= 14) return "common.termMany";
+    if (last === 1) return "common.termOne";
+    if (last >= 2 && last <= 4) return "common.termFew";
+    return "common.termMany";
+  }
+
+  return count === 1 ? "common.termOne" : "common.termMany";
+}
+
+function formatTermCount(t: I18nContextValue["t"], locale: AppLocale, count: number): string {
+  return `${count} ${t(pluralTermKey(locale, count))}`;
+}
+
 function App() {
+  const [locale, setLocaleState] = useState<AppLocale>(() => loadAppLocale());
   const [sets, setSets] = useState<StudySet[]>(() => loadSets());
   const [selectedId, setSelectedId] = useState<string | null>(() => loadSets()[0]?.id ?? null);
   const [isManaging, setIsManaging] = useState(() => !loadSets().length);
@@ -168,6 +239,13 @@ function App() {
   const lastImportRef = useRef<{ signature: string; receivedAt: number } | null>(null);
   const selectedSet = sets.find((set) => set.id === selectedId) ?? null;
   const isImportRoute = window.location.hash.startsWith("#/import");
+  const t = useMemo(() => {
+    return (key: TranslationKey, params?: TranslationParams) => translate(locale, key, params);
+  }, [locale]);
+  const setLocale = (nextLocale: AppLocale) => {
+    setLocaleState(nextLocale);
+    saveAppLocale(nextLocale);
+  };
 
   const addImportedSet = (payload: ImportPayload) => {
     const importedSet = payloadToStudySet(payload);
@@ -206,7 +284,10 @@ function App() {
     setIsManaging(false);
     setMode("review");
     setNotice(
-      `${existingSet ? "Updated" : "Imported"} ${nextSet.terms.length} terms in "${nextSet.title}".`,
+      t(existingSet ? "notice.updated" : "notice.imported", {
+        termCount: formatTermCount(t, locale, nextSet.terms.length),
+        title: nextSet.title,
+      }),
     );
     window.location.hash = "";
   };
@@ -218,13 +299,13 @@ function App() {
       try {
         addImportedSet(payload);
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Import failed.");
+        setNotice(importErrorMessage(t, error, "error.importFailed"));
       }
     };
 
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [t]);
 
   const updateSelectedSet = (nextSet: StudySet) => {
     const next = sets.map((set) => (set.id === nextSet.id ? nextSet : set));
@@ -240,20 +321,32 @@ function App() {
   };
 
   return (
+    <I18nContext.Provider value={{ locale, setLocale, t }}>
     <main className="app-shell">
       <header className="topbar">
         <button className="brand" onClick={() => window.location.assign(currentAppUrl())}>
-          Vocab Arcade
+          {t("app.brand")}
         </button>
-        <nav className="top-actions" aria-label="Main navigation">
+        <nav className="top-actions" aria-label={t("nav.main")}>
           {!isManaging && selectedSet ? (
-            <button onClick={() => setIsManaging(true)}>Manage</button>
+            <button onClick={() => setIsManaging(true)}>{t("nav.manage")}</button>
           ) : (
-            sets.length > 0 && <button onClick={() => setIsManaging(false)}>Practice</button>
+            sets.length > 0 && <button onClick={() => setIsManaging(false)}>{t("nav.practice")}</button>
           )}
+          <select
+            aria-label={t("nav.language")}
+            value={locale}
+            onChange={(event) => setLocale(event.target.value as AppLocale)}
+          >
+            {appLocales.map((appLocale) => (
+              <option key={appLocale} value={appLocale}>
+                {appLocaleLabels[appLocale]}
+              </option>
+            ))}
+          </select>
           {sets.length > 0 && (
             <select
-              aria-label="Saved sets"
+              aria-label={t("nav.savedSets")}
               value={selectedId ?? ""}
               onChange={(event) => {
                 setSelectedId(event.target.value);
@@ -294,18 +387,18 @@ function App() {
         />
       )}
     </main>
+    </I18nContext.Provider>
   );
 }
 
 function ImportReceiver() {
+  const { t } = useI18n();
+
   return (
     <section className="panel import-receiver">
-      <p className="eyebrow">Waiting for import</p>
-      <h1>Return to the study page and click the bookmarklet.</h1>
-      <p>
-        This tab is ready to receive term-definition data from the bookmarklet.
-        Keep it open until the import completes.
-      </p>
+      <p className="eyebrow">{t("import.waiting")}</p>
+      <h1>{t("import.receiverTitle")}</h1>
+      <p>{t("import.receiverBody")}</p>
     </section>
   );
 }
@@ -321,9 +414,18 @@ function ImportScreen({
   onOpenSet: (id: string) => void;
   onDeleteSet: (id: string) => void;
 }) {
+  const { locale, t } = useI18n();
   const [manualText, setManualText] = useState("");
   const [error, setError] = useState("");
-  const bookmarklet = useMemo(() => buildBookmarklet(currentAppUrl()), []);
+  const bookmarklet = useMemo(
+    () =>
+      buildBookmarklet(currentAppUrl(), {
+        noPairs: t("bookmarklet.noPairs"),
+        errorPrefix: t("bookmarklet.errorPrefix"),
+        errorSuffix: t("bookmarklet.errorSuffix"),
+      }),
+    [t],
+  );
   const bookmarkletRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
@@ -336,12 +438,12 @@ function ImportScreen({
       onImport(parseManualImport(manualText));
       setManualText("");
     } catch (importError) {
-      setError(importError instanceof Error ? importError.message : "Import failed.");
+      setError(importErrorMessage(t, importError, "error.importFailed"));
     }
   };
 
   const confirmDelete = (set: StudySet) => {
-    if (window.confirm(`Are you sure you want to delete "${set.title}"?`)) {
+    if (window.confirm(t("import.confirmDelete", { title: set.title }))) {
       onDeleteSet(set.id);
     }
   };
@@ -369,7 +471,7 @@ function ImportScreen({
         onImport(parseManualImport(text));
         setError("");
       } catch (importError) {
-        setError(importError instanceof Error ? importError.message : "File import failed.");
+        setError(importErrorMessage(t, importError, "error.fileImportFailed"));
       }
     };
     reader.readAsText(file);
@@ -380,48 +482,45 @@ function ImportScreen({
     <>
       <section className="import-grid">
         <div className="hero-copy">
-          <p className="eyebrow">Browser-only vocabulary practice</p>
-          <h1>Import a study set and practice it with focused game modes.</h1>
-          <p>
-            Drag the bookmarklet below to your bookmarks bar, then click it on any 
-            study set page to instantly import the terms. Everything is saved locally on this device.
-          </p>
+          <p className="eyebrow">{t("import.eyebrow")}</p>
+          <h1>{t("import.title")}</h1>
+          <p>{t("import.description")}</p>
         </div>
 
         <div className="panel">
-          <h2>Bookmarklet Import</h2>
+          <h2>{t("import.bookmarkletTitle")}</h2>
           <div className="steps">
             <span>
-              1. Show your bookmarks bar: press <kbd>Cmd</kbd> + <kbd>Shift</kbd> +{" "}
-              <kbd>B</kbd> in Chrome or Edge on Mac, or use Safari's View menu.
+              {t("import.stepBookmarks", {
+                cmd: "Cmd",
+                shift: "Shift",
+                b: "B",
+              })}
             </span>
-            <span>2. Drag this link to your bookmarks bar:</span>
+            <span>{t("import.stepDrag")}</span>
             <a className="bookmarklet" href="#" ref={bookmarkletRef}>
-              Import to Vocab Arcade
+              {t("import.bookmarkletLabel")}
             </a>
-            <span>
-              If dragging fails, right-click it, copy the link address, and paste
-              that address into a new bookmark.
-            </span>
-            <span>3. Open any study set page.</span>
-            <span>4. Click the bookmarklet while you are on that page.</span>
+            <span>{t("import.dragFallback")}</span>
+            <span>{t("import.stepOpen")}</span>
+            <span>{t("import.stepClick")}</span>
           </div>
         </div>
 
         <div className="panel">
-          <label htmlFor="manual-import">Paste JSON, CSV, or TSV</label>
+          <label htmlFor="manual-import">{t("import.manualLabel")}</label>
           <textarea
             id="manual-import"
             rows={8}
             value={manualText}
             onChange={(event) => setManualText(event.target.value)}
-            placeholder={"word\tdefinition\nfront,back"}
+            placeholder={t("import.manualPlaceholder")}
           />
           {error && <p className="error">{error}</p>}
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button onClick={importManual} style={{ flex: 1 }}>Import pasted data</button>
+            <button onClick={importManual} style={{ flex: 1 }}>{t("import.pasteButton")}</button>
             <label className="button-link" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', background: '#303956', margin: 0, minHeight: '2.75rem', padding: '0 1rem', borderRadius: '8px', color: '#fff', fontSize: '1rem' }}>
-              Import from .json file
+              {t("import.fileButton")}
               <input type="file" accept=".json" onChange={importFile} style={{ display: 'none' }} />
             </label>
           </div>
@@ -430,28 +529,28 @@ function ImportScreen({
 
       {sets.length > 0 && (
         <div className="panel saved-panel" style={{ marginTop: '1rem' }}>
-          <h2>Saved sets</h2>
+          <h2>{t("import.savedTitle")}</h2>
           <div className="saved-list">
             {sets.map((set) => (
               <div key={set.id} style={{ display: 'flex', gap: '0.5rem' }}>
                 <button style={{ flex: 1 }} onClick={() => onOpenSet(set.id)}>
                   <strong>{set.title}</strong>
-                  <span>{set.terms.length} terms</span>
+                  <span>{t("import.termCount", { termCount: formatTermCount(t, locale, set.terms.length) })}</span>
                 </button>
                 <button 
                   onClick={(e) => { e.stopPropagation(); exportSet(set); }} 
                   style={{ width: 'auto', background: '#303956', padding: '0 1.25rem' }}
-                  aria-label="Export to JSON"
+                  aria-label={t("import.exportJson")}
                 >
-                  Export
+                  {t("import.export")}
                 </button>
                 <button 
                   onClick={(e) => { e.stopPropagation(); confirmDelete(set); }} 
                   className="danger"
                   style={{ width: 'auto', padding: '0 1.25rem' }}
-                  aria-label="Delete set"
+                  aria-label={t("import.deleteSet")}
                 >
-                  Delete
+                  {t("import.delete")}
                 </button>
               </div>
             ))}
@@ -473,6 +572,7 @@ function StudyWorkspace({
   onModeChange: (mode: Mode) => void;
   onSetChange: (set: StudySet) => void;
 }) {
+  const { locale, t } = useI18n();
   const [termLanguage, setTermLanguage] = useState<VoiceLanguage>(() => 
     (localStorage.getItem("vocab-arcade:voice-term") as VoiceLanguage) || "auto"
   );
@@ -487,38 +587,38 @@ function StudyWorkspace({
     <section className="workspace">
       <div className="set-header">
         <div>
-          <p className="eyebrow">{set.terms.length} terms</p>
+          <p className="eyebrow">{t("workspace.termCount", { termCount: formatTermCount(t, locale, set.terms.length) })}</p>
           <h1>{set.title}</h1>
           {set.sourceUrl && (
             <a href={set.sourceUrl} target="_blank" rel="noreferrer">
-              Source page
+              {t("workspace.sourcePage")}
             </a>
           )}
         </div>
         <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <div className="voice-controls" aria-label="Voice settings">
+          <div className="voice-controls" aria-label={t("voice.settings")}>
             <label>
-              Term voice
+              {t("voice.term")}
               <select
                 value={termLanguage}
                 onChange={(event) => updateTermLang(event.target.value as VoiceLanguage)}
               >
                 {(Object.keys(voiceLanguageLabels) as VoiceLanguage[]).map((language) => (
                   <option key={language} value={language}>
-                    {voiceLanguageLabels[language]}
+                    {t(voiceLanguageLabels[language])}
                   </option>
                 ))}
               </select>
             </label>
             <label>
-              Definition voice
+              {t("voice.definition")}
               <select
                 value={definitionLanguage}
                 onChange={(event) => updateDefLang(event.target.value as VoiceLanguage)}
               >
                 {(Object.keys(voiceLanguageLabels) as VoiceLanguage[]).map((language) => (
                   <option key={language} value={language}>
-                    {voiceLanguageLabels[language]}
+                    {t(voiceLanguageLabels[language])}
                   </option>
                 ))}
               </select>
@@ -527,8 +627,8 @@ function StudyWorkspace({
         </div>
       </div>
 
-      <div className="mode-grid" role="tablist" aria-label="Practice modes">
-        {(Object.keys(modeLabels) as Mode[]).map((item) => (
+      <div className="mode-grid" role="tablist" aria-label={t("mode.practiceModes")}>
+        {(Object.keys(modeLabelKeys) as Mode[]).map((item) => (
           <button
             key={item}
             className={mode === item ? "active" : ""}
@@ -536,7 +636,7 @@ function StudyWorkspace({
             role="tab"
             aria-selected={mode === item}
           >
-            {modeLabels[item]}
+            {t(modeLabelKeys[item])}
           </button>
         ))}
       </div>
@@ -554,6 +654,7 @@ function StudyWorkspace({
 }
 
 function ReviewMode({ set, termLanguage, definitionLanguage }: { set: StudySet; termLanguage: VoiceLanguage; definitionLanguage: VoiceLanguage }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const visibleTerms = set.terms.filter((term) =>
     `${term.term} ${term.definition}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
@@ -563,10 +664,10 @@ function ReviewMode({ set, termLanguage, definitionLanguage }: { set: StudySet; 
     <div className="panel">
       <div className="toolbar">
         <input
-          aria-label="Search terms"
+          aria-label={t("review.search")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search terms"
+          placeholder={t("review.search")}
         />
       </div>
       <div className="review-list">
@@ -575,9 +676,9 @@ function ReviewMode({ set, termLanguage, definitionLanguage }: { set: StudySet; 
             <div className="review-cell">
               <p>{term.term}</p>
               <button
-                aria-label="Speak term"
+                aria-label={t("voice.speakTerm")}
                 className="review-speak-button"
-                title="Speak term"
+                title={t("voice.speakTerm")}
                 type="button"
                 onClick={() => speakText(term.term, termLanguage)}
               >
@@ -590,9 +691,9 @@ function ReviewMode({ set, termLanguage, definitionLanguage }: { set: StudySet; 
             <div className="review-cell">
               <p>{term.definition}</p>
               <button
-                aria-label="Speak definition"
+                aria-label={t("voice.speakDefinition")}
                 className="review-speak-button"
-                title="Speak definition"
+                title={t("voice.speakDefinition")}
                 type="button"
                 onClick={() => speakText(term.definition, definitionLanguage)}
               >
@@ -607,6 +708,7 @@ function ReviewMode({ set, termLanguage, definitionLanguage }: { set: StudySet; 
 }
 
 function EditMode({ set, onSetChange }: { set: StudySet; onSetChange: (set: StudySet) => void }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const visibleTerms = set.terms.filter((term) =>
     `${term.term} ${term.definition}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
@@ -646,19 +748,19 @@ function EditMode({ set, onSetChange }: { set: StudySet; onSetChange: (set: Stud
     <div className="panel">
       <div className="toolbar">
         <input
-          aria-label="Search editable terms"
+          aria-label={t("edit.searchLabel")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search terms to edit"
+          placeholder={t("edit.searchPlaceholder")}
         />
         <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button onClick={addTerm}>Add pair</button>
+          <button onClick={addTerm}>{t("edit.addPair")}</button>
           <button
             onClick={() =>
               onSetChange({ ...set, terms: shuffle(set.terms), updatedAt: new Date().toISOString() })
             }
           >
-            Shuffle
+            {t("edit.shuffle")}
           </button>
         </div>
       </div>
@@ -666,16 +768,16 @@ function EditMode({ set, onSetChange }: { set: StudySet; onSetChange: (set: Stud
         {visibleTerms.map((term) => (
           <div className="term-row" key={term.id}>
             <textarea
-              aria-label={`Edit term ${term.term}`}
+              aria-label={t("edit.editTerm", { term: term.term })}
               value={term.term}
               onChange={(event) => updateTerm(term.id, "term", event.target.value)}
             />
             <textarea
-              aria-label={`Edit definition ${term.definition}`}
+              aria-label={t("edit.editDefinition", { definition: term.definition })}
               value={term.definition}
               onChange={(event) => updateTerm(term.id, "definition", event.target.value)}
             />
-            <button onClick={() => deleteTerm(term.id)}>Remove</button>
+            <button onClick={() => deleteTerm(term.id)}>{t("edit.remove")}</button>
           </div>
         ))}
       </div>
@@ -684,6 +786,7 @@ function EditMode({ set, onSetChange }: { set: StudySet; onSetChange: (set: Stud
 }
 
 function FlashcardsMode({ set, termLanguage, definitionLanguage }: { set: StudySet; termLanguage: VoiceLanguage; definitionLanguage: VoiceLanguage }) {
+  const { t } = useI18n();
   const [cards, setCards] = useState(() => set.terms);
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -725,24 +828,24 @@ function FlashcardsMode({ set, termLanguage, definitionLanguage }: { set: StudyS
         onClick={flipCard}
       >
         <span>{flipped ? current.definition : current.term}</span>
-        <small>Click to flip</small>
+        <small>{t("flashcards.flip")}</small>
       </button>
       <div className="card-controls">
-        <button onClick={() => setIndex(Math.max(0, index - 1))}>Previous</button>
+        <button onClick={() => setIndex(Math.max(0, index - 1))}>{t("flashcards.previous")}</button>
         <span>
           {index + 1} / {cards.length}
         </span>
-        <button onClick={() => setIndex(Math.min(cards.length - 1, index + 1))}>Next</button>
+        <button onClick={() => setIndex(Math.min(cards.length - 1, index + 1))}>{t("flashcards.next")}</button>
         <button
           onClick={() => {
             setCards(shuffle(cards));
             setIndex(0);
           }}
         >
-          Shuffle
+          {t("flashcards.shuffle")}
         </button>
         <button onClick={() => current && speakText(flipped ? current.definition : current.term, flipped ? definitionLanguage : termLanguage)}>
-          Speak
+          {t("flashcards.speak")}
         </button>
       </div>
     </div>
@@ -772,6 +875,7 @@ function learnProgressTotal(settings: LearnSettings, termCount: number): number 
 }
 
 function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLanguage }) {
+  const { t } = useI18n();
   const learnSectionSize = 7;
   const [settings, setSettings] = useState<LearnSettings>(() => loadLearnSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -932,16 +1036,16 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
       <button
         className="learn-settings-button"
         aria-expanded={settingsOpen}
-        aria-label="Learn settings"
+        aria-label={t("learn.settingsAria")}
         onClick={() => setSettingsOpen((value) => !value)}
       >
-        Settings
+        {t("learn.settings")}
       </button>
       {settingsOpen && (
-        <div className="learn-settings-panel" role="dialog" aria-label="Learn settings panel">
-          <h3>Question types</h3>
+        <div className="learn-settings-panel" role="dialog" aria-label={t("learn.settingsPanel")}>
+          <h3>{t("learn.questionTypes")}</h3>
           <label className="switch-row">
-            <span>Shuffle</span>
+            <span>{t("learn.shuffle")}</span>
             <input
               type="checkbox"
               checked={settings.shuffle}
@@ -950,7 +1054,7 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
             <i />
           </label>
           <label className="switch-row">
-            <span>Multiple Choice</span>
+            <span>{t("learn.multipleChoice")}</span>
             <input
               type="checkbox"
               checked={settings.multipleChoice}
@@ -959,7 +1063,7 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
             <i />
           </label>
           <label className="switch-row">
-            <span>Written answers</span>
+            <span>{t("learn.writtenAnswers")}</span>
             <input
               type="checkbox"
               checked={settings.written}
@@ -974,7 +1078,7 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
 
   const renderHeader = () => (
     <div className="learn-header">
-      <span>{phase === "multiple-choice" ? "Multiple choice" : "Written"}</span>
+      <span>{phase === "multiple-choice" ? t("learn.multipleChoicePhase") : t("learn.writtenPhase")}</span>
       {renderSettings()}
     </div>
   );
@@ -988,7 +1092,7 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
       return Math.max(0, Math.min(1, (completed - segmentStart) / segmentSize));
     });
     return (
-      <div className="learn-progress" aria-label="Learn progress">
+      <div className="learn-progress" aria-label={t("learn.progress")}>
         <div className="learn-progress-track">
           {segments.map((fillAmount, index) => (
             <span
@@ -1008,9 +1112,9 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
     const progressPercent = Math.round((Math.min(score.total, progressTotal) / progressTotal) * 100);
     return (
       <div className="learn-summary">
-        <h2>Going strong. You can do this!</h2>
+        <h2>{t("learn.summaryTitle")}</h2>
         <p>
-          Total set progress: <strong>{progressPercent}%</strong>
+          {t("learn.totalProgress")} <strong>{progressPercent}%</strong>
         </p>
         <div
           className="learn-summary-bar"
@@ -1021,28 +1125,28 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
           <em>{progressTotal}</em>
         </div>
         <div className="learn-summary-labels">
-          <span>Correct</span>
-          <span>Total questions</span>
+          <span>{t("learn.correct")}</span>
+          <span>{t("learn.totalQuestions")}</span>
         </div>
-        <h3>Terms studied in this round</h3>
+        <h3>{t("learn.studiedRound")}</h3>
         <div className="learn-summary-list">
           {sectionCompleted.map((term, index) => (
             <div className="learn-summary-row" key={`${term.id}-summary-${index}`}>
               <span>{term.term}</span>
               <span>{term.definition}</span>
               <button
-                aria-label={`Speak ${term.term}`}
+                aria-label={t("voice.speakTermValue", { term: term.term })}
                 className="icon-button"
                 onClick={() => speakText(term.term, termLanguage)}
               >
-                Speak
+                {t("voice.speak")}
               </button>
             </div>
           ))}
         </div>
         <div className="learn-review-actions">
-          <span>Press Continue to keep practicing</span>
-          <button onClick={continueFromSummary}>Continue</button>
+          <span>{t("learn.keepPracticing")}</span>
+          <button onClick={continueFromSummary}>{t("learn.continue")}</button>
         </div>
       </div>
     );
@@ -1062,8 +1166,8 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
       <div className="learn-shell">
         {renderHeader()}
         <div className="panel empty-state">
-          <h2>Round complete</h2>
-          <button onClick={restartLearn}>Practice again</button>
+          <h2>{t("learn.roundComplete")}</h2>
+          <button onClick={restartLearn}>{t("learn.practiceAgain")}</button>
         </div>
       </div>
     );
@@ -1076,7 +1180,7 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
       <div className="panel quiz-panel learn-panel">
         <div>
           <p className="eyebrow">
-            {score.correct} correct of {score.total}
+            {t("learn.correctOf", { correct: score.correct, total: score.total })}
           </p>
           <h2>{feedback?.prompt ?? (phase === "multiple-choice" ? current.term : current.definition)}</h2>
         </div>
@@ -1114,7 +1218,7 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
               answerWritten();
             }}
           >
-            <label htmlFor="learn-written-answer">Write the matching term</label>
+            <label htmlFor="learn-written-answer">{t("learn.writeMatchingTerm")}</label>
             <input
               id="learn-written-answer"
               value={writtenInput}
@@ -1122,21 +1226,21 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
               onChange={(event) => setWrittenInput(event.target.value)}
               autoComplete="off"
             />
-            <button disabled={Boolean(feedback) || !writtenInput.trim()}>Check</button>
+            <button disabled={Boolean(feedback) || !writtenInput.trim()}>{t("learn.check")}</button>
           </form>
         )}
-        {feedback?.status === "correct" && <p className="result">Correct</p>}
+        {feedback?.status === "correct" && <p className="result">{t("learn.correctResult")}</p>}
         {feedback?.status === "wrong" && (
           <div className="learn-review">
-            <p className="learn-review-message">No worries. Learning is a process.</p>
+            <p className="learn-review-message">{t("learn.wrongMessage")}</p>
             {feedback.phase === "written" && (
               <div className="learn-review-grid">
                 <div className="learn-answer-card wrong-answer">
-                  <span>Your answer</span>
+                  <span>{t("learn.yourAnswer")}</span>
                   <strong>{feedback.selected}</strong>
                 </div>
                 <div className="learn-answer-card correct-answer">
-                  <span>Correct answer</span>
+                  <span>{t("learn.correctAnswer")}</span>
                   <strong>{feedback.answer}</strong>
                 </div>
               </div>
@@ -1144,10 +1248,10 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
             <div className="learn-review-actions">
               <span>
                 {feedback.phase === "written"
-                  ? "Review the correction, then continue"
-                  : "Select the correct answer or press Continue"}
+                  ? t("learn.reviewWritten")
+                  : t("learn.reviewChoice")}
               </span>
-              <button onClick={continueLearn}>Continue</button>
+              <button onClick={continueLearn}>{t("learn.continue")}</button>
             </div>
           </div>
         )}
@@ -1157,6 +1261,7 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
 }
 
 function TestMode({ set }: { set: StudySet }) {
+  const { t } = useI18n();
   const maxQuestions = Math.max(1, set.terms.length);
   const defaultSettings: TestSettings = {
     answerWith: "both",
@@ -1206,7 +1311,7 @@ function TestMode({ set }: { set: StudySet }) {
         <div className="test-setup-header">
           <div>
             <p>{set.title}</p>
-            <h2>Set up your test</h2>
+            <h2>{t("test.setupTitle")}</h2>
           </div>
           <div className="test-doc-icon" aria-hidden="true">
             <span />
@@ -1214,7 +1319,7 @@ function TestMode({ set }: { set: StudySet }) {
         </div>
 
         <div className="test-setting-row">
-          <label htmlFor="test-question-count">Questions (max {maxQuestions})</label>
+          <label htmlFor="test-question-count">{t("test.questionsMax", { max: maxQuestions })}</label>
           <input
             id="test-question-count"
             type="number"
@@ -1234,7 +1339,7 @@ function TestMode({ set }: { set: StudySet }) {
         </div>
 
         <div className="test-setting-row">
-          <label htmlFor="test-answer-with">Answer with</label>
+          <label htmlFor="test-answer-with">{t("test.answerWith")}</label>
           <select
             id="test-answer-with"
             value={settings.answerWith}
@@ -1245,18 +1350,18 @@ function TestMode({ set }: { set: StudySet }) {
               }))
             }
           >
-            <option value="both">Both</option>
-            <option value="definition">Definition</option>
-            <option value="term">Term</option>
+            <option value="both">{t("test.answerBoth")}</option>
+            <option value="definition">{t("test.answerDefinition")}</option>
+            <option value="term">{t("test.answerTerm")}</option>
           </select>
         </div>
 
         <div className="test-kind-list">
           {[
-            ["true-false", "True/False"],
-            ["multiple-choice", "Multiple Choice"],
-            ["matching", "Matching"],
-            ["written", "Written"],
+            ["true-false", t("test.trueFalse")],
+            ["multiple-choice", t("test.multipleChoice")],
+            ["matching", t("test.matching")],
+            ["written", t("test.written")],
           ].map(([kind, label]) => (
             <label className="switch-row" key={kind}>
               <span>{label}</span>
@@ -1274,7 +1379,7 @@ function TestMode({ set }: { set: StudySet }) {
 
         <div className="test-setup-actions">
           <button disabled={!canStart} onClick={startTest}>
-            Start test
+            {t("test.start")}
           </button>
         </div>
       </div>
@@ -1291,9 +1396,9 @@ function TestMode({ set }: { set: StudySet }) {
             setGraded(false);
           }}
         >
-          Set up new test
+          {t("test.setupNew")}
         </button>
-        <button onClick={() => setGraded(true)}>Grade test</button>
+        <button onClick={() => setGraded(true)}>{t("test.grade")}</button>
         {graded && <strong>{score} / {questions.length}</strong>}
       </div>
       {questions.slice(0, Math.min(18, questions.length)).map((question) => (
@@ -1342,14 +1447,14 @@ function TestMode({ set }: { set: StudySet }) {
             <div className="true-false">
               <span>{question.shownAnswer}</span>
               <button onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: "true" }))}>
-                True
+                {t("test.true")}
               </button>
               <button onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: "false" }))}>
-                False
+                {t("test.false")}
               </button>
             </div>
           )}
-          {graded && <small>Answer: {question.answer}</small>}
+          {graded && <small>{t("test.answer", { answer: question.answer })}</small>}
         </div>
       ))}
     </div>
@@ -1357,6 +1462,7 @@ function TestMode({ set }: { set: StudySet }) {
 }
 
 function MatchMode({ set }: { set: StudySet }) {
+  const { t } = useI18n();
   const sourceTerms = set.terms.slice(0, 8);
   const [items, setItems] = useState(() => makeMatchItems(sourceTerms));
   const [selected, setSelected] = useState<string[]>([]);
@@ -1376,8 +1482,12 @@ function MatchMode({ set }: { set: StudySet }) {
   return (
     <div className="panel">
       <div className="toolbar">
-        <strong>{items.length === 0 ? `Complete in ${Math.round((Date.now() - startedAt) / 1000)}s` : "Match pairs"}</strong>
-        <button onClick={() => setItems(makeMatchItems(sourceTerms))}>Reset</button>
+        <strong>
+          {items.length === 0
+            ? t("match.completeIn", { seconds: Math.round((Date.now() - startedAt) / 1000) })
+            : t("match.pairs")}
+        </strong>
+        <button onClick={() => setItems(makeMatchItems(sourceTerms))}>{t("match.reset")}</button>
       </div>
       <div className="tile-grid">
         {items.map((item) => (
@@ -1404,10 +1514,11 @@ function makeMatchItems(terms: StudyTerm[]) {
 }
 
 function BlocksMode({ set }: { set: StudySet }) {
+  const { t } = useI18n();
   const terms = set.terms.slice(0, 10);
   const [blocks, setBlocks] = useState(() => makeMatchItems(terms));
   const [selected, setSelected] = useState<string[]>([]);
-  const [message, setMessage] = useState("Clear matching blocks.");
+  const [messageKey, setMessageKey] = useState<TranslationKey>("blocks.initial");
 
   const pick = (id: string) => {
     const next = [...selected, id].slice(-2);
@@ -1415,10 +1526,10 @@ function BlocksMode({ set }: { set: StudySet }) {
     if (next.length !== 2) return;
     const [first, second] = next.map((itemId) => blocks.find((block) => block.id === itemId));
     if (first && second && first.termId === second.termId && first.kind !== second.kind) {
-      setMessage("Match cleared");
+      setMessageKey("blocks.cleared");
       setBlocks((prev) => prev.filter((block) => !next.includes(block.id)));
     } else {
-      setMessage("Try another pair");
+      setMessageKey("blocks.tryAnother");
     }
     setTimeout(() => setSelected([]), 350);
   };
@@ -1426,14 +1537,14 @@ function BlocksMode({ set }: { set: StudySet }) {
   return (
     <div className="panel">
       <div className="toolbar">
-        <strong>{message}</strong>
+        <strong>{t(messageKey)}</strong>
         <button
           onClick={() => {
             setBlocks(makeMatchItems(terms));
-            setMessage("Clear matching blocks.");
+            setMessageKey("blocks.initial");
           }}
         >
-          Reset
+          {t("blocks.reset")}
         </button>
       </div>
       <div className="blocks-grid">
@@ -1447,12 +1558,13 @@ function BlocksMode({ set }: { set: StudySet }) {
           </button>
         ))}
       </div>
-      {blocks.length === 0 && <p className="result">Board cleared.</p>}
+      {blocks.length === 0 && <p className="result">{t("blocks.boardCleared")}</p>}
     </div>
   );
 }
 
 function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage: VoiceLanguage; onExit: () => void }) {
+  const { t } = useI18n();
   const stageRef = useRef<HTMLDivElement>(null);
   const shipRef = useRef<HTMLDivElement>(null);
   const cannonRef = useRef<HTMLElement>(null);
@@ -1472,7 +1584,7 @@ function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage:
   const [streak, setStreak] = useState(0);
   const [progress, setProgress] = useState(100);
   const [muted, setMuted] = useState(false);
-  const [message, setMessage] = useState("Pick the matching definition.");
+  const [messageKey, setMessageKey] = useState<TranslationKey>("blast.initial");
   const [locked, setLocked] = useState(false);
   const current = deck[round];
   const complete = isBlastRoundComplete(round, deck.length);
@@ -1486,7 +1598,7 @@ function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage:
     setStreak(0);
     setProgress(100);
     setShot(null);
-    setMessage("Pick the matching definition.");
+    setMessageKey("blast.initial");
     setLocked(false);
   };
 
@@ -1494,11 +1606,11 @@ function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage:
     if (wasCorrect) {
       setScore((value) => value + 1);
       setStreak((value) => value + 1);
-      setMessage("Direct hit.");
+      setMessageKey("blast.hit");
     } else {
       setMisses((value) => value + 1);
       setStreak(0);
-      setMessage("Target missed.");
+      setMessageKey("blast.missed");
     }
     setProgress(100);
     setLocked(false);
@@ -1515,7 +1627,7 @@ function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage:
     setProgress(100);
     setShot(null);
     setLocked(false);
-    setMessage("Pick the matching definition.");
+    setMessageKey("blast.initial");
     if (!muted) speakText(current.term, termLanguage);
   }, [complete, current?.id, muted, round, set]);
 
@@ -1610,7 +1722,7 @@ function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage:
 
     setMisses((value) => value + 1);
     setStreak(0);
-    setMessage("Not that one.");
+    setMessageKey("blast.notThatOne");
     setTargets((items) =>
       items.map((item) => (item.id === target.id ? { ...item, state: "miss" } : item)),
     );
@@ -1624,19 +1736,19 @@ function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage:
     return (
       <div className="blast-shell">
         <div className="blast-topbar">
-          <strong>Blast</strong>
+          <strong>{t("mode.blast")}</strong>
           <span>{set.title}</span>
-          <button onClick={onExit}>Exit</button>
+          <button onClick={onExit}>{t("blast.exit")}</button>
         </div>
         <div className="blast-finish">
-          <p className="eyebrow">Mission complete</p>
-          <h2>{score} direct hits</h2>
+          <p className="eyebrow">{t("blast.missionComplete")}</p>
+          <h2>{t("blast.directHits", { count: score })}</h2>
           <p>
-            Level {level} with {misses} misses.
+            {t("blast.finishStats", { level, misses })}
           </p>
           <div className="card-controls">
-            <button onClick={restart}>Play again</button>
-            <button onClick={onExit}>Back to set</button>
+            <button onClick={restart}>{t("blast.playAgain")}</button>
+            <button onClick={onExit}>{t("blast.backToSet")}</button>
           </div>
         </div>
       </div>
@@ -1646,12 +1758,12 @@ function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage:
   return (
     <div className="blast-shell">
       <div className="blast-topbar">
-        <strong>Blast</strong>
+        <strong>{t("mode.blast")}</strong>
         <span>{set.title}</span>
         <div className="blast-actions">
-          <button onClick={() => setMuted((value) => !value)}>{muted ? "Sound off" : "Sound on"}</button>
-          <button onClick={restart}>Restart</button>
-          <button onClick={onExit}>Exit</button>
+          <button onClick={() => setMuted((value) => !value)}>{muted ? t("blast.soundOff") : t("blast.soundOn")}</button>
+          <button onClick={restart}>{t("blast.restart")}</button>
+          <button onClick={onExit}>{t("blast.exit")}</button>
         </div>
       </div>
       <div className="blast-prompt">
@@ -1660,11 +1772,11 @@ function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage:
       </div>
       <div
         className="blast-stage"
-        aria-label="Blast answer field"
+        aria-label={t("blast.answerField")}
         ref={stageRef}
         onMouseMove={updateAim}
       >
-        <span className="blast-status">{message}</span>
+        <span className="blast-status">{t(messageKey)}</span>
         {shot && (
           <span
             className="blast-shot"
@@ -1700,14 +1812,14 @@ function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage:
           <span />
         </div>
         <div className="blast-hud blast-hud-left">
-          <strong>Lvl {level}</strong>
+          <strong>{t("blast.level", { level })}</strong>
           <span>
             {score}/{deck.length}
           </span>
-          <small>Misses {misses}</small>
+          <small>{t("blast.misses", { misses })}</small>
         </div>
         <div className="blast-hud blast-hud-right">
-          <span>Streak</span>
+          <span>{t("blast.streak")}</span>
           <strong>{streak}</strong>
         </div>
       </div>
