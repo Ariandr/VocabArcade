@@ -347,6 +347,83 @@ describe("App", () => {
     expect(speak.mock.calls[0][0].lang).toBe("uk-UA");
   });
 
+  it("binds a matching definition voice when the browser exposes only a base language", () => {
+    const speak = vi.fn();
+    const ukrainianVoice = { lang: "uk" };
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: {
+        speak,
+        cancel: vi.fn(),
+        resume: vi.fn(),
+        getVoices: () => [{ lang: "en-US" }, ukrainianVoice],
+      },
+    });
+    Object.defineProperty(globalThis, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: function MockSpeechSynthesisUtterance(
+        this: { text: string; lang?: string; voice?: unknown },
+        text: string,
+      ) {
+        this.text = text;
+      },
+    });
+    seedSet();
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Definition voice"), {
+      target: { value: "uk-UA" },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Speak definition" })[0]);
+
+    expect(speak.mock.calls[0][0].lang).toBe("uk");
+    expect(speak.mock.calls[0][0].voice).toBe(ukrainianVoice);
+  });
+
+  it("waits briefly for browser voices before speaking selected languages", () => {
+    vi.useFakeTimers();
+    const speak = vi.fn();
+    const ukrainianVoice = { lang: "uk-UA" };
+    let voices: Array<{ lang: string }> = [];
+    const synth = {
+      speak,
+      cancel: vi.fn(),
+      resume: vi.fn(),
+      getVoices: () => voices,
+      onvoiceschanged: null as ((event?: Event) => void) | null,
+    };
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: synth,
+    });
+    Object.defineProperty(globalThis, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: function MockSpeechSynthesisUtterance(
+        this: { text: string; lang?: string; voice?: unknown },
+        text: string,
+      ) {
+        this.text = text;
+      },
+    });
+    seedSet();
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Definition voice"), {
+      target: { value: "uk-UA" },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Speak definition" })[0]);
+    expect(speak).not.toHaveBeenCalled();
+
+    voices = [ukrainianVoice];
+    act(() => {
+      synth.onvoiceschanged?.();
+    });
+
+    expect(speak.mock.calls[0][0].lang).toBe("uk-UA");
+    expect(speak.mock.calls[0][0].voice).toBe(ukrainianVoice);
+    vi.useRealTimers();
+  });
+
   it("uses the visible side language for flashcard pronunciation", () => {
     vi.useFakeTimers();
     const speak = vi.fn();

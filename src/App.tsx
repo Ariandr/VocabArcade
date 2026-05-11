@@ -103,6 +103,7 @@ function setSignature(set: StudySet): string {
 
 type VoiceLanguage = "auto" | "en-US" | "pl-PL" | "uk-UA";
 let activeUtterance: SpeechSynthesisUtterance | null = null;
+let activeSpeechRequest = 0;
 
 const voiceLanguageLabels: Record<VoiceLanguage, TranslationKey> = {
   auto: "voice.auto",
@@ -117,6 +118,26 @@ function detectVoiceLanguage(text: string): Exclude<VoiceLanguage, "auto"> {
   return "en-US";
 }
 
+function normalizedVoiceLanguage(language: string): string {
+  return language.toLocaleLowerCase().replace(/_/g, "-");
+}
+
+function matchingVoice(
+  voices: SpeechSynthesisVoice[],
+  language: Exclude<VoiceLanguage, "auto">,
+): SpeechSynthesisVoice | undefined {
+  const requestedLanguage = normalizedVoiceLanguage(language);
+  const requestedBaseLanguage = requestedLanguage.split("-")[0];
+  return voices.find((item) => {
+    const voiceLanguage = normalizedVoiceLanguage(item.lang);
+    return (
+      voiceLanguage === requestedLanguage ||
+      voiceLanguage === requestedBaseLanguage ||
+      voiceLanguage.startsWith(`${requestedBaseLanguage}-`)
+    );
+  });
+}
+
 function speakText(text: string, language: VoiceLanguage = "auto"): void {
   const Utterance = globalThis.SpeechSynthesisUtterance ?? window.SpeechSynthesisUtterance;
   const synth = window.speechSynthesis;
@@ -128,38 +149,56 @@ function speakText(text: string, language: VoiceLanguage = "auto"): void {
     return;
   }
   const resolvedLanguage = language === "auto" ? detectVoiceLanguage(text) : language;
-  const utterance = new Utterance(text);
-  const voices =
-    typeof synth.getVoices === "function"
-      ? synth.getVoices()
-      : [];
-  const requestedLanguage = resolvedLanguage.toLocaleLowerCase();
-  const requestedBaseLanguage = requestedLanguage.split("-")[0];
-  const voice = voices.find((item) => {
-    const voiceLanguage = item.lang.toLocaleLowerCase().replace("_", "-");
-    return (
-      voiceLanguage === requestedLanguage ||
-      voiceLanguage.startsWith(`${requestedBaseLanguage}-`)
-    );
-  });
-  if (voice) {
-    utterance.voice = voice;
-    utterance.lang = voice.lang;
-  } else {
-    utterance.lang = resolvedLanguage;
+  const requestId = activeSpeechRequest + 1;
+  activeSpeechRequest = requestId;
+
+  const voices = typeof synth.getVoices === "function" ? synth.getVoices() : [];
+  const voice = matchingVoice(voices, resolvedLanguage);
+
+  const speakNow = (matchedVoice?: SpeechSynthesisVoice) => {
+    if (requestId !== activeSpeechRequest) return;
+    const utterance = new Utterance(text);
+    utterance.lang = matchedVoice?.lang ?? resolvedLanguage;
+    if (matchedVoice) {
+      utterance.voice = matchedVoice;
+    }
+
+    activeUtterance = utterance;
+    utterance.onend = () => {
+      if (activeUtterance === utterance) activeUtterance = null;
+    };
+    utterance.onerror = () => {
+      if (activeUtterance === utterance) activeUtterance = null;
+    };
+
+    synth.cancel();
+    synth.speak(utterance);
+    synth.resume?.();
+  };
+
+  if (voice || voices.length > 0 || !("onvoiceschanged" in synth)) {
+    speakNow(voice);
+    return;
   }
 
-  activeUtterance = utterance;
-  utterance.onend = () => {
-    if (activeUtterance === utterance) activeUtterance = null;
-  };
-  utterance.onerror = () => {
-    if (activeUtterance === utterance) activeUtterance = null;
+  const originalOnVoicesChanged = synth.onvoiceschanged;
+  const speakAfterVoicesLoad = (event?: Event) => {
+    if (event) {
+      originalOnVoicesChanged?.call(synth, event);
+    }
+    if (requestId !== activeSpeechRequest) return;
+    synth.onvoiceschanged = originalOnVoicesChanged;
+    const nextVoices = typeof synth.getVoices === "function" ? synth.getVoices() : [];
+    speakNow(matchingVoice(nextVoices, resolvedLanguage));
   };
 
-  synth.cancel();
-  synth.speak(utterance);
-  synth.resume?.();
+  synth.onvoiceschanged = speakAfterVoicesLoad;
+  window.setTimeout(() => {
+    if (requestId !== activeSpeechRequest) return;
+    synth.onvoiceschanged = originalOnVoicesChanged;
+    const nextVoices = typeof synth.getVoices === "function" ? synth.getVoices() : [];
+    speakNow(matchingVoice(nextVoices, resolvedLanguage));
+  }, 180);
 }
 
 function playAnswerFeedback(correct: boolean) {
