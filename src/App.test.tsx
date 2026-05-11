@@ -321,6 +321,68 @@ describe("App", () => {
     expect(speak.mock.calls[0][0].lang).toBe("pl-PL");
   });
 
+  it("applies selected definition pronunciation language", () => {
+    const speak = vi.fn();
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: { speak, cancel: vi.fn(), resume: vi.fn(), getVoices: () => [] },
+    });
+    Object.defineProperty(globalThis, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: function MockSpeechSynthesisUtterance(
+        this: { text: string; lang?: string },
+        text: string,
+      ) {
+        this.text = text;
+      },
+    });
+    seedSet();
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Definition voice"), {
+      target: { value: "uk-UA" },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Speak definition" })[0]);
+
+    expect(speak.mock.calls[0][0].lang).toBe("uk-UA");
+  });
+
+  it("uses the visible side language for flashcard pronunciation", () => {
+    vi.useFakeTimers();
+    const speak = vi.fn();
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: { speak, cancel: vi.fn(), resume: vi.fn(), getVoices: () => [] },
+    });
+    Object.defineProperty(globalThis, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: function MockSpeechSynthesisUtterance(
+        this: { text: string; lang?: string },
+        text: string,
+      ) {
+        this.text = text;
+      },
+    });
+    seedSet();
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Term voice"), {
+      target: { value: "en-US" },
+    });
+    fireEvent.change(screen.getByLabelText("Definition voice"), {
+      target: { value: "pl-PL" },
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Flashcards" }));
+    fireEvent.click(screen.getByText("Click to flip"));
+    act(() => {
+      vi.advanceTimersByTime(120);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Speak" }));
+
+    expect(speak.mock.calls[0][0].lang).toBe("pl-PL");
+    vi.useRealTimers();
+  });
+
   it("keeps editing inside Set Edit", () => {
     seedSet();
     render(<App />);

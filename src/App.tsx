@@ -40,6 +40,7 @@ import {
 } from "./lib/storage";
 import {
   appLocaleLabels,
+  appLocaleShortLabels,
   appLocales,
   loadAppLocale,
   saveAppLocale,
@@ -229,6 +230,84 @@ function formatTermCount(t: I18nContextValue["t"], locale: AppLocale, count: num
   return `${count} ${t(pluralTermKey(locale, count))}`;
 }
 
+function speakLanguageForMatch(
+  kind: "term" | "definition",
+  termLanguage: VoiceLanguage,
+  definitionLanguage: VoiceLanguage,
+): VoiceLanguage {
+  return kind === "term" ? termLanguage : definitionLanguage;
+}
+
+function languageForText(
+  set: StudySet,
+  text: string,
+  termLanguage: VoiceLanguage,
+  definitionLanguage: VoiceLanguage,
+): VoiceLanguage {
+  const normalized = text.trim().toLocaleLowerCase();
+  const matchesDefinition = set.terms.some(
+    (term) => term.definition.trim().toLocaleLowerCase() === normalized,
+  );
+  if (matchesDefinition) return definitionLanguage;
+  const matchesTerm = set.terms.some((term) => term.term.trim().toLocaleLowerCase() === normalized);
+  if (matchesTerm) return termLanguage;
+  return "auto";
+}
+
+function SpeakButton({
+  text,
+  language,
+  label,
+  className = "pronounce-button",
+}: {
+  text: string;
+  language: VoiceLanguage;
+  label: string;
+  className?: string;
+}) {
+  return (
+    <button
+      aria-label={label}
+      className={className}
+      title={label}
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        speakText(text, language);
+      }}
+    >
+      🔊
+    </button>
+  );
+}
+
+function PronouncedChoice({
+  text,
+  language,
+  label,
+  selected,
+  disabled,
+  className = "",
+  onChoose,
+}: {
+  text: string;
+  language: VoiceLanguage;
+  label: string;
+  selected?: boolean;
+  disabled?: boolean;
+  className?: string;
+  onChoose: () => void;
+}) {
+  return (
+    <div className={`choice-with-speak ${selected ? "selected" : ""}`}>
+      <button className={className} disabled={disabled} type="button" onClick={onChoose}>
+        {text}
+      </button>
+      <SpeakButton text={text} language={language} label={label} />
+    </div>
+  );
+}
+
 function App() {
   const [locale, setLocaleState] = useState<AppLocale>(() => loadAppLocale());
   const [sets, setSets] = useState<StudySet[]>(() => loadSets());
@@ -324,26 +403,30 @@ function App() {
     <I18nContext.Provider value={{ locale, setLocale, t }}>
     <main className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => window.location.assign(currentAppUrl())}>
-          {t("app.brand")}
-        </button>
+        <div className="topbar-left">
+          <button className="brand" onClick={() => window.location.assign(currentAppUrl())}>
+            {t("app.brand")}
+          </button>
+          <select
+            className="locale-select"
+            aria-label={t("nav.language")}
+            title={appLocaleLabels[locale]}
+            value={locale}
+            onChange={(event) => setLocale(event.target.value as AppLocale)}
+          >
+            {appLocales.map((appLocale) => (
+              <option key={appLocale} value={appLocale}>
+                {appLocaleShortLabels[appLocale]}
+              </option>
+            ))}
+          </select>
+        </div>
         <nav className="top-actions" aria-label={t("nav.main")}>
           {!isManaging && selectedSet ? (
             <button onClick={() => setIsManaging(true)}>{t("nav.manage")}</button>
           ) : (
             sets.length > 0 && <button onClick={() => setIsManaging(false)}>{t("nav.practice")}</button>
           )}
-          <select
-            aria-label={t("nav.language")}
-            value={locale}
-            onChange={(event) => setLocale(event.target.value as AppLocale)}
-          >
-            {appLocales.map((appLocale) => (
-              <option key={appLocale} value={appLocale}>
-                {appLocaleLabels[appLocale]}
-              </option>
-            ))}
-          </select>
           {sets.length > 0 && (
             <select
               aria-label={t("nav.savedSets")}
@@ -644,11 +727,11 @@ function StudyWorkspace({
       {mode === "review" && <ReviewMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
       {mode === "edit" && <EditMode set={set} onSetChange={onSetChange} />}
       {mode === "flashcards" && <FlashcardsMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
-      {mode === "learn" && <LearnMode set={set} termLanguage={termLanguage} />}
-      {mode === "test" && <TestMode set={set} />}
-      {mode === "match" && <MatchMode set={set} />}
-      {mode === "blocks" && <BlocksMode set={set} />}
-      {mode === "blast" && <BlastMode set={set} termLanguage={termLanguage} onExit={() => onModeChange("review")} />}
+      {mode === "learn" && <LearnMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
+      {mode === "test" && <TestMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
+      {mode === "match" && <MatchMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
+      {mode === "blocks" && <BlocksMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
+      {mode === "blast" && <BlastMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} onExit={() => onModeChange("review")} />}
     </section>
   );
 }
@@ -677,7 +760,7 @@ function ReviewMode({ set, termLanguage, definitionLanguage }: { set: StudySet; 
               <p>{term.term}</p>
               <button
                 aria-label={t("voice.speakTerm")}
-                className="review-speak-button"
+                className="review-speak-button pronounce-button"
                 title={t("voice.speakTerm")}
                 type="button"
                 onClick={() => speakText(term.term, termLanguage)}
@@ -692,7 +775,7 @@ function ReviewMode({ set, termLanguage, definitionLanguage }: { set: StudySet; 
               <p>{term.definition}</p>
               <button
                 aria-label={t("voice.speakDefinition")}
-                className="review-speak-button"
+                className="review-speak-button pronounce-button"
                 title={t("voice.speakDefinition")}
                 type="button"
                 onClick={() => speakText(term.definition, definitionLanguage)}
@@ -819,17 +902,33 @@ function FlashcardsMode({ set, termLanguage, definitionLanguage }: { set: StudyS
       flipTimeoutRef.current = null;
     }, 120);
   };
+  const visibleText = flipped ? current.definition : current.term;
+  const visibleLanguage = flipped ? definitionLanguage : termLanguage;
 
   return (
     <div className="panel study-stage">
-      <button
+      <div
         className={`flashcard ${isFlipping ? "flashcard-flipping" : ""}`}
+        role="button"
+        tabIndex={0}
         onAnimationEnd={() => setIsFlipping(false)}
         onClick={flipCard}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            flipCard();
+          }
+        }}
       >
-        <span>{flipped ? current.definition : current.term}</span>
+        <SpeakButton
+          text={visibleText}
+          language={visibleLanguage}
+          label={flipped ? t("voice.speakDefinition") : t("voice.speakTerm")}
+          className="pronounce-button flashcard-speak"
+        />
+        <span>{visibleText}</span>
         <small>{t("flashcards.flip")}</small>
-      </button>
+      </div>
       <div className="card-controls">
         <button onClick={() => setIndex(Math.max(0, index - 1))}>{t("flashcards.previous")}</button>
         <span>
@@ -844,7 +943,7 @@ function FlashcardsMode({ set, termLanguage, definitionLanguage }: { set: StudyS
         >
           {t("flashcards.shuffle")}
         </button>
-        <button onClick={() => current && speakText(flipped ? current.definition : current.term, flipped ? definitionLanguage : termLanguage)}>
+        <button onClick={() => current && speakText(visibleText, visibleLanguage)}>
           {t("flashcards.speak")}
         </button>
       </div>
@@ -874,7 +973,15 @@ function learnProgressTotal(settings: LearnSettings, termCount: number): number 
   );
 }
 
-function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLanguage }) {
+function LearnMode({
+  set,
+  termLanguage,
+  definitionLanguage,
+}: {
+  set: StudySet;
+  termLanguage: VoiceLanguage;
+  definitionLanguage: VoiceLanguage;
+}) {
   const { t } = useI18n();
   const learnSectionSize = 7;
   const [settings, setSettings] = useState<LearnSettings>(() => loadLearnSettings());
@@ -1134,13 +1241,18 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
             <div className="learn-summary-row" key={`${term.id}-summary-${index}`}>
               <span>{term.term}</span>
               <span>{term.definition}</span>
-              <button
-                aria-label={t("voice.speakTermValue", { term: term.term })}
-                className="icon-button"
-                onClick={() => speakText(term.term, termLanguage)}
-              >
-                {t("voice.speak")}
-              </button>
+              <div className="summary-speak-actions">
+                <SpeakButton
+                  text={term.term}
+                  language={termLanguage}
+                  label={t("voice.speakTermValue", { term: term.term })}
+                />
+                <SpeakButton
+                  text={term.definition}
+                  language={definitionLanguage}
+                  label={t("voice.speakDefinition")}
+                />
+              </div>
             </div>
           ))}
         </div>
@@ -1182,7 +1294,14 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
           <p className="eyebrow">
             {t("learn.correctOf", { correct: score.correct, total: score.total })}
           </p>
-          <h2>{feedback?.prompt ?? (phase === "multiple-choice" ? current.term : current.definition)}</h2>
+          <div className="prompt-with-speak">
+            <h2>{feedback?.prompt ?? (phase === "multiple-choice" ? current.term : current.definition)}</h2>
+            <SpeakButton
+              text={feedback?.prompt ?? (phase === "multiple-choice" ? current.term : current.definition)}
+              language={phase === "multiple-choice" ? termLanguage : definitionLanguage}
+              label={phase === "multiple-choice" ? t("voice.speakTerm") : t("voice.speakDefinition")}
+            />
+          </div>
         </div>
         {phase === "multiple-choice" ? (
           <div className="choice-grid">
@@ -1199,14 +1318,15 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
                       : "";
 
               return (
-                <button
+                <PronouncedChoice
                   key={choice}
+                  text={choice}
+                  language={definitionLanguage}
+                  label={t("voice.speakDefinition")}
                   className={feedbackClass}
                   disabled={Boolean(feedback)}
-                  onClick={() => answerMultipleChoice(choice)}
-                >
-                  {choice}
-                </button>
+                  onChoose={() => answerMultipleChoice(choice)}
+                />
               );
             })}
           </div>
@@ -1260,7 +1380,15 @@ function LearnMode({ set, termLanguage }: { set: StudySet; termLanguage: VoiceLa
   );
 }
 
-function TestMode({ set }: { set: StudySet }) {
+function TestMode({
+  set,
+  termLanguage,
+  definitionLanguage,
+}: {
+  set: StudySet;
+  termLanguage: VoiceLanguage;
+  definitionLanguage: VoiceLanguage;
+}) {
   const { t } = useI18n();
   const maxQuestions = Math.max(1, set.terms.length);
   const defaultSettings: TestSettings = {
@@ -1403,35 +1531,50 @@ function TestMode({ set }: { set: StudySet }) {
       </div>
       {questions.slice(0, Math.min(18, questions.length)).map((question) => (
         <div className="question" key={question.id}>
-          <p>{question.prompt}</p>
+          <div className="question-prompt">
+            <p>{question.prompt}</p>
+            <SpeakButton
+              text={question.prompt}
+              language={languageForText(set, question.prompt, termLanguage, definitionLanguage)}
+              label={t("voice.speak")}
+            />
+          </div>
           {question.kind === "multiple-choice" && (
             <div className="choice-grid">
               {question.choices.map((choice) => (
-                <label key={choice}>
-                  <input
-                    type="radio"
-                    name={question.id}
-                    value={choice}
-                    checked={answers[question.id] === choice}
-                    onChange={(event) =>
-                      setAnswers((prev) => ({ ...prev, [question.id]: event.target.value }))
-                    }
+                <div className="choice-with-speak" key={choice}>
+                  <label>
+                    <input
+                      type="radio"
+                      name={question.id}
+                      value={choice}
+                      checked={answers[question.id] === choice}
+                      onChange={(event) =>
+                        setAnswers((prev) => ({ ...prev, [question.id]: event.target.value }))
+                      }
+                    />
+                    {choice}
+                  </label>
+                  <SpeakButton
+                    text={choice}
+                    language={languageForText(set, choice, termLanguage, definitionLanguage)}
+                    label={t("voice.speak")}
                   />
-                  {choice}
-                </label>
+                </div>
               ))}
             </div>
           )}
           {question.kind === "matching" && (
             <div className="choice-grid matching-grid">
               {question.choices.map((choice) => (
-                <button
+                <PronouncedChoice
                   key={choice}
-                  className={answers[question.id] === choice ? "selected" : ""}
-                  onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: choice }))}
-                >
-                  {choice}
-                </button>
+                  text={choice}
+                  language={languageForText(set, choice, termLanguage, definitionLanguage)}
+                  label={t("voice.speak")}
+                  selected={answers[question.id] === choice}
+                  onChoose={() => setAnswers((prev) => ({ ...prev, [question.id]: choice }))}
+                />
               ))}
             </div>
           )}
@@ -1446,6 +1589,11 @@ function TestMode({ set }: { set: StudySet }) {
           {question.kind === "true-false" && (
             <div className="true-false">
               <span>{question.shownAnswer}</span>
+              <SpeakButton
+                text={question.shownAnswer}
+                language={languageForText(set, question.shownAnswer, termLanguage, definitionLanguage)}
+                label={t("voice.speak")}
+              />
               <button onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: "true" }))}>
                 {t("test.true")}
               </button>
@@ -1461,7 +1609,15 @@ function TestMode({ set }: { set: StudySet }) {
   );
 }
 
-function MatchMode({ set }: { set: StudySet }) {
+function MatchMode({
+  set,
+  termLanguage,
+  definitionLanguage,
+}: {
+  set: StudySet;
+  termLanguage: VoiceLanguage;
+  definitionLanguage: VoiceLanguage;
+}) {
   const { t } = useI18n();
   const sourceTerms = set.terms.slice(0, 8);
   const [items, setItems] = useState(() => makeMatchItems(sourceTerms));
@@ -1491,20 +1647,28 @@ function MatchMode({ set }: { set: StudySet }) {
       </div>
       <div className="tile-grid">
         {items.map((item) => (
-          <button
+          <PronouncedChoice
             key={item.id}
-            className={selected.includes(item.id) ? "selected" : ""}
-            onClick={() => pick(item.id)}
-          >
-            {item.text}
-          </button>
+            text={item.text}
+            language={speakLanguageForMatch(item.kind, termLanguage, definitionLanguage)}
+            label={item.kind === "term" ? t("voice.speakTerm") : t("voice.speakDefinition")}
+            selected={selected.includes(item.id)}
+            onChoose={() => pick(item.id)}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function makeMatchItems(terms: StudyTerm[]) {
+type MatchItem = {
+  id: string;
+  termId: string;
+  kind: "term" | "definition";
+  text: string;
+};
+
+function makeMatchItems(terms: StudyTerm[]): MatchItem[] {
   return shuffle(
     terms.flatMap((term) => [
       { id: `${term.id}-term`, termId: term.id, kind: "term", text: term.term },
@@ -1513,7 +1677,15 @@ function makeMatchItems(terms: StudyTerm[]) {
   );
 }
 
-function BlocksMode({ set }: { set: StudySet }) {
+function BlocksMode({
+  set,
+  termLanguage,
+  definitionLanguage,
+}: {
+  set: StudySet;
+  termLanguage: VoiceLanguage;
+  definitionLanguage: VoiceLanguage;
+}) {
   const { t } = useI18n();
   const terms = set.terms.slice(0, 10);
   const [blocks, setBlocks] = useState(() => makeMatchItems(terms));
@@ -1549,13 +1721,14 @@ function BlocksMode({ set }: { set: StudySet }) {
       </div>
       <div className="blocks-grid">
         {blocks.map((block) => (
-          <button
+          <PronouncedChoice
             key={block.id}
-            className={selected.includes(block.id) ? "selected" : ""}
-            onClick={() => pick(block.id)}
-          >
-            {block.text}
-          </button>
+            text={block.text}
+            language={speakLanguageForMatch(block.kind, termLanguage, definitionLanguage)}
+            label={block.kind === "term" ? t("voice.speakTerm") : t("voice.speakDefinition")}
+            selected={selected.includes(block.id)}
+            onChoose={() => pick(block.id)}
+          />
         ))}
       </div>
       {blocks.length === 0 && <p className="result">{t("blocks.boardCleared")}</p>}
@@ -1563,7 +1736,17 @@ function BlocksMode({ set }: { set: StudySet }) {
   );
 }
 
-function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage: VoiceLanguage; onExit: () => void }) {
+function BlastMode({
+  set,
+  termLanguage,
+  definitionLanguage,
+  onExit,
+}: {
+  set: StudySet;
+  termLanguage: VoiceLanguage;
+  definitionLanguage: VoiceLanguage;
+  onExit: () => void;
+}) {
   const { t } = useI18n();
   const stageRef = useRef<HTMLDivElement>(null);
   const shipRef = useRef<HTMLDivElement>(null);
@@ -1769,6 +1952,14 @@ function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage:
       <div className="blast-prompt">
         <div className="blast-progress" style={{ width: `${progress}%` }} />
         <span>{current?.term}</span>
+        {current && (
+          <SpeakButton
+            text={current.term}
+            language={termLanguage}
+            label={t("voice.speakTerm")}
+            className="pronounce-button blast-prompt-speak"
+          />
+        )}
       </div>
       <div
         className="blast-stage"
@@ -1789,19 +1980,29 @@ function BlastMode({ set, termLanguage, onExit }: { set: StudySet; termLanguage:
           />
         )}
         {targets.map((target) => (
-          <button
+          <div
             key={target.id}
-            className={`asteroid asteroid-${target.state}`}
+            className="asteroid-wrap"
             style={{
               left: `${target.x}%`,
               top: `${target.y}%`,
               width: `${target.size}rem`,
               height: `${target.size}rem`,
             }}
-            onClick={(event) => chooseTarget(target, event)}
           >
-            {target.text}
-          </button>
+            <button
+              className={`asteroid asteroid-${target.state}`}
+              onClick={(event) => chooseTarget(target, event)}
+            >
+              {target.text}
+            </button>
+            <SpeakButton
+              text={target.text}
+              language={definitionLanguage}
+              label={t("voice.speakDefinition")}
+              className="pronounce-button asteroid-speak"
+            />
+          </div>
         ))}
         <div className="ship" aria-hidden="true" ref={shipRef}>
           <i

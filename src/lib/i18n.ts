@@ -9,6 +9,12 @@ export const appLocaleLabels: Record<AppLocale, string> = {
   pl: "Polski",
 };
 
+export const appLocaleShortLabels: Record<AppLocale, string> = {
+  en: "EN",
+  uk: "UK",
+  pl: "PL",
+};
+
 export const appLocales = Object.keys(appLocaleLabels) as AppLocale[];
 
 const english = {
