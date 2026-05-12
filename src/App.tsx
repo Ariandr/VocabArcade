@@ -269,14 +269,6 @@ function formatTermCount(t: I18nContextValue["t"], locale: AppLocale, count: num
   return `${count} ${t(pluralTermKey(locale, count))}`;
 }
 
-function speakLanguageForMatch(
-  kind: "term" | "definition",
-  termLanguage: VoiceLanguage,
-  definitionLanguage: VoiceLanguage,
-): VoiceLanguage {
-  return kind === "term" ? termLanguage : definitionLanguage;
-}
-
 function languageForText(
   set: StudySet,
   text: string,
@@ -344,6 +336,22 @@ function PronouncedChoice({
       </button>
       <SpeakButton text={text} language={language} label={label} />
     </div>
+  );
+}
+
+function MatchTile({
+  text,
+  selected,
+  onChoose,
+}: {
+  text: string;
+  selected?: boolean;
+  onChoose: () => void;
+}) {
+  return (
+    <button className={selected ? "selected" : ""} type="button" onClick={onChoose}>
+      {text}
+    </button>
   );
 }
 
@@ -768,8 +776,8 @@ function StudyWorkspace({
       {mode === "flashcards" && <FlashcardsMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
       {mode === "learn" && <LearnMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
       {mode === "test" && <TestMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
-      {mode === "match" && <MatchMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
-      {mode === "blocks" && <BlocksMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
+      {mode === "match" && <MatchMode set={set} />}
+      {mode === "blocks" && <BlocksMode set={set} />}
       {mode === "blast" && <BlastMode set={set} termLanguage={termLanguage} onExit={() => onModeChange("review")} />}
     </section>
   );
@@ -1648,15 +1656,7 @@ function TestMode({
   );
 }
 
-function MatchMode({
-  set,
-  termLanguage,
-  definitionLanguage,
-}: {
-  set: StudySet;
-  termLanguage: VoiceLanguage;
-  definitionLanguage: VoiceLanguage;
-}) {
+function MatchMode({ set }: { set: StudySet }) {
   const { t } = useI18n();
   const sourceTerms = set.terms.slice(0, 8);
   const [items, setItems] = useState(() => makeMatchItems(sourceTerms));
@@ -1686,11 +1686,9 @@ function MatchMode({
       </div>
       <div className="tile-grid">
         {items.map((item) => (
-          <PronouncedChoice
+          <MatchTile
             key={item.id}
             text={item.text}
-            language={speakLanguageForMatch(item.kind, termLanguage, definitionLanguage)}
-            label={item.kind === "term" ? t("voice.speakTerm") : t("voice.speakDefinition")}
             selected={selected.includes(item.id)}
             onChoose={() => pick(item.id)}
           />
@@ -1716,15 +1714,7 @@ function makeMatchItems(terms: StudyTerm[]): MatchItem[] {
   );
 }
 
-function BlocksMode({
-  set,
-  termLanguage,
-  definitionLanguage,
-}: {
-  set: StudySet;
-  termLanguage: VoiceLanguage;
-  definitionLanguage: VoiceLanguage;
-}) {
+function BlocksMode({ set }: { set: StudySet }) {
   const { t } = useI18n();
   const terms = set.terms.slice(0, 10);
   const [blocks, setBlocks] = useState(() => makeMatchItems(terms));
@@ -1760,11 +1750,9 @@ function BlocksMode({
       </div>
       <div className="blocks-grid">
         {blocks.map((block) => (
-          <PronouncedChoice
+          <MatchTile
             key={block.id}
             text={block.text}
-            language={speakLanguageForMatch(block.kind, termLanguage, definitionLanguage)}
-            label={block.kind === "term" ? t("voice.speakTerm") : t("voice.speakDefinition")}
             selected={selected.includes(block.id)}
             onChoose={() => pick(block.id)}
           />

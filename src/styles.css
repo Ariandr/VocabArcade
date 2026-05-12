@@ -996,8 +996,7 @@ kbd {
   font-weight: 500;
 }
 
-.matching-grid button.selected,
-.matching-grid .choice-with-speak.selected > button:first-child {
+.matching-grid button.selected {
   background: #1f766e;
 }
 
@@ -1136,27 +1135,17 @@ kbd {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
-.tile-grid .choice-with-speak,
-.blocks-grid .choice-with-speak {
-  min-height: 6.5rem;
-}
-
-.tile-grid .choice-with-speak > button:first-child,
-.blocks-grid .choice-with-speak > button:first-child {
+.tile-grid button,
+.blocks-grid button {
   min-height: 6.5rem;
   padding: 0.75rem;
   background: #252b49;
   overflow-wrap: anywhere;
 }
 
-.tile-grid .choice-with-speak.selected > button:first-child,
-.blocks-grid .choice-with-speak.selected > button:first-child {
+.tile-grid button.selected,
+.blocks-grid button.selected {
   background: #1f766e;
-}
-
-.tile-grid .choice-with-speak .pronounce-button,
-.blocks-grid .choice-with-speak .pronounce-button {
-  min-height: 6.5rem;
 }
 
 .import-receiver {
