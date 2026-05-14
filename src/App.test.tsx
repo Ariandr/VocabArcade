@@ -295,6 +295,50 @@ describe("App", () => {
     expect(cancel).toHaveBeenCalled();
   });
 
+  it("toggles active learning terms from Set Review and excludes inactive terms from practice", () => {
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Active for learning. Click to exclude from exercises.",
+      })[0],
+    );
+
+    const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+    expect(sets[0].terms[0].active).toBe(false);
+    expect(
+      screen.getByRole("button", {
+        name: "Inactive for learning. Click to include in exercises.",
+      }),
+    ).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Flashcards" }));
+
+    expect(screen.getByText("two")).toBeInTheDocument();
+    expect(screen.queryByText("one")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty practice state when every term is inactive", () => {
+    seedSet();
+    render(<App />);
+
+    for (let index = 0; index < 4; index += 1) {
+      fireEvent.click(
+        screen.getAllByRole("button", {
+          name: "Active for learning. Click to exclude from exercises.",
+        })[0],
+      );
+    }
+
+    fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
+
+    expect(screen.getByText("No active terms selected")).toBeInTheDocument();
+    expect(
+      screen.getByText("Star at least one term in Set Review to use practice modes."),
+    ).toBeInTheDocument();
+  });
+
   it("applies selected pronunciation language", () => {
     const speak = vi.fn();
     Object.defineProperty(window, "speechSynthesis", {
@@ -598,6 +642,48 @@ describe("App", () => {
     expect(screen.getByLabelText("Written answers")).toBeChecked();
     expect(screen.getByText("Written")).toBeInTheDocument();
     expect(screen.getByLabelText("Write the matching term")).toBeInTheDocument();
+  });
+
+  it("adds written Learn answer letters, hints, and a Don't know action", () => {
+    localStorage.setItem(
+      "vocab-arcade:learn-settings",
+      JSON.stringify({ shuffle: false, multipleChoice: false, written: true }),
+    );
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
+
+    const answerInput = screen.getByLabelText("Write the matching term");
+    fireEvent.click(screen.getByRole("button", { name: "o" }));
+    expect(answerInput).toHaveValue("o");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show hint" }));
+    expect(answerInput).toHaveValue("on");
+
+    fireEvent.click(screen.getByRole("button", { name: "Don't know?" }));
+
+    expect(screen.getByText("No worries. Learning is a process.")).toBeInTheDocument();
+    expect(screen.getByText("Correct answer")).toBeInTheDocument();
+    expect(screen.getByText("one")).toBeInTheDocument();
+  });
+
+  it("highlights the selected True/False test answer", () => {
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Test" }));
+    fireEvent.click(screen.getByLabelText("True/False"));
+    fireEvent.click(screen.getByLabelText("Multiple Choice"));
+    fireEvent.click(screen.getByRole("button", { name: "Start test" }));
+
+    const trueButton = screen.getAllByRole("button", { name: "True" })[0];
+    const falseButton = screen.getAllByRole("button", { name: "False" })[0];
+
+    fireEvent.click(trueButton);
+    expect(trueButton).toHaveClass("selected");
+    expect(trueButton).toHaveAttribute("aria-pressed", "true");
+    expect(falseButton).not.toHaveClass("selected");
   });
 
   it("keeps Learn multiple-choice only through the first section", () => {

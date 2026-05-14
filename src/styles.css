@@ -381,11 +381,45 @@ kbd {
   padding: 1.05rem 1.2rem;
 }
 
+.review-row-inactive {
+  opacity: 0.58;
+}
+
 .review-cell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.65rem;
   align-items: center;
+}
+
+.review-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.review-active-button {
+  display: inline-grid;
+  width: 2.4rem;
+  min-width: 2.4rem;
+  height: 2.4rem;
+  min-height: 2.4rem;
+  place-items: center;
+  border-radius: 999px;
+  background: transparent;
+  padding: 0;
+  color: #f7f9ff;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.review-active-button[aria-pressed="false"] {
+  color: #9aa4c6;
+}
+
+.review-active-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: none;
 }
 
 .review-row p {
@@ -608,15 +642,38 @@ kbd {
 
 .learn-written-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
-  align-items: end;
 }
 
 .learn-written-form label {
-  grid-column: 1 / -1;
   color: #d9def5;
   font-weight: 900;
+}
+
+.learn-letter-bank,
+.learn-written-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.learn-letter-bank button {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #252b49;
+  padding: 0;
+  font-weight: 900;
+}
+
+.learn-letter-bank button:disabled,
+.learn-written-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .learn-written-form input {
@@ -625,15 +682,24 @@ kbd {
   font-size: 1.15rem;
 }
 
-.learn-written-form button {
+.learn-written-actions {
+  justify-content: space-between;
+}
+
+.learn-written-actions button {
   min-height: 4rem;
   min-width: 8rem;
   font-weight: 900;
 }
 
-.learn-written-form button:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
+.learn-written-actions button:first-child {
+  background: #eef2ff;
+  color: #252b49;
+}
+
+.learn-written-actions button:nth-child(2) {
+  background: transparent;
+  color: #cbd3f2;
 }
 
 .learn-summary {
@@ -1115,10 +1181,17 @@ kbd {
 
 .true-false button {
   min-width: 8rem;
-  min-height: 4.75rem;
+  min-height: 4.05rem;
   padding: 0 1.5rem;
   font-size: 1.2rem;
   font-weight: 900;
+}
+
+.true-false button.selected {
+  background: #7c8eff;
+  box-shadow:
+    inset 0 0 0 2px #cdd6ff,
+    0 0 0 3px rgba(125, 211, 252, 0.2);
 }
 
 .tile-grid,

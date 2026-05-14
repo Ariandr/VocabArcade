@@ -49,6 +49,7 @@ import {
   type TranslationKey,
   type TranslationParams,
 } from "./lib/i18n";
+import { activeStudySet, isTermActive } from "./lib/terms";
 
 type Mode =
   | "review"
@@ -267,6 +268,31 @@ function pluralTermKey(locale: AppLocale, count: number): TranslationKey {
 
 function formatTermCount(t: I18nContextValue["t"], locale: AppLocale, count: number): string {
   return `${count} ${t(pluralTermKey(locale, count))}`;
+}
+
+function uniqueAnswerLetters(answer: string): string[] {
+  const seen = new Set<string>();
+  return Array.from(answer).filter((character) => {
+    if (!character.trim()) return false;
+    const key = character.toLocaleLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function nextHintValue(input: string, answer: string): string {
+  const inputChars = Array.from(input);
+  const answerChars = Array.from(answer);
+  let prefixLength = 0;
+  while (
+    prefixLength < inputChars.length &&
+    prefixLength < answerChars.length &&
+    inputChars[prefixLength].toLocaleLowerCase() === answerChars[prefixLength].toLocaleLowerCase()
+  ) {
+    prefixLength += 1;
+  }
+  return answerChars.slice(0, Math.min(answerChars.length, prefixLength + 1)).join("");
 }
 
 function languageForText(
@@ -712,6 +738,8 @@ function StudyWorkspace({
 
   const updateTermLang = (l: VoiceLanguage) => { setTermLanguage(l); localStorage.setItem("vocab-arcade:voice-term", l); };
   const updateDefLang = (l: VoiceLanguage) => { setDefinitionLanguage(l); localStorage.setItem("vocab-arcade:voice-def", l); };
+  const activeSet = useMemo(() => activeStudySet(set), [set]);
+  const needsActiveTerms = mode !== "review" && mode !== "edit" && activeSet.terms.length === 0;
 
   return (
     <section className="workspace">
@@ -771,24 +799,54 @@ function StudyWorkspace({
         ))}
       </div>
 
-      {mode === "review" && <ReviewMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
+      {mode === "review" && <ReviewMode set={set} onSetChange={onSetChange} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
       {mode === "edit" && <EditMode set={set} onSetChange={onSetChange} />}
-      {mode === "flashcards" && <FlashcardsMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
-      {mode === "learn" && <LearnMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
-      {mode === "test" && <TestMode set={set} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
-      {mode === "match" && <MatchMode set={set} />}
-      {mode === "blocks" && <BlocksMode set={set} />}
-      {mode === "blast" && <BlastMode set={set} termLanguage={termLanguage} onExit={() => onModeChange("review")} />}
+      {needsActiveTerms && <NoActiveTerms />}
+      {!needsActiveTerms && mode === "flashcards" && <FlashcardsMode set={activeSet} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
+      {!needsActiveTerms && mode === "learn" && <LearnMode set={activeSet} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
+      {!needsActiveTerms && mode === "test" && <TestMode set={activeSet} termLanguage={termLanguage} definitionLanguage={definitionLanguage} />}
+      {!needsActiveTerms && mode === "match" && <MatchMode set={activeSet} />}
+      {!needsActiveTerms && mode === "blocks" && <BlocksMode set={activeSet} />}
+      {!needsActiveTerms && mode === "blast" && <BlastMode set={activeSet} termLanguage={termLanguage} onExit={() => onModeChange("review")} />}
     </section>
   );
 }
 
-function ReviewMode({ set, termLanguage, definitionLanguage }: { set: StudySet; termLanguage: VoiceLanguage; definitionLanguage: VoiceLanguage }) {
+function NoActiveTerms() {
+  const { t } = useI18n();
+  return (
+    <div className="panel empty-state">
+      <h2>{t("review.noActiveTitle")}</h2>
+      <p>{t("review.noActiveBody")}</p>
+    </div>
+  );
+}
+
+function ReviewMode({
+  set,
+  onSetChange,
+  termLanguage,
+  definitionLanguage,
+}: {
+  set: StudySet;
+  onSetChange: (set: StudySet) => void;
+  termLanguage: VoiceLanguage;
+  definitionLanguage: VoiceLanguage;
+}) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const visibleTerms = set.terms.filter((term) =>
     `${term.term} ${term.definition}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
   );
+  const toggleActive = (termId: string) => {
+    onSetChange({
+      ...set,
+      terms: set.terms.map((term) =>
+        term.id === termId ? { ...term, active: !isTermActive(term) } : term,
+      ),
+      updatedAt: new Date().toISOString(),
+    });
+  };
 
   return (
     <div className="panel">
@@ -801,19 +859,34 @@ function ReviewMode({ set, termLanguage, definitionLanguage }: { set: StudySet; 
         />
       </div>
       <div className="review-list">
-        {visibleTerms.map((term) => (
-          <article className="review-row" key={term.id}>
+        {visibleTerms.map((term) => {
+          const active = isTermActive(term);
+          const activeLabel = active ? t("review.activeTooltip") : t("review.inactiveTooltip");
+          return (
+          <article className={`review-row ${active ? "" : "review-row-inactive"}`} key={term.id}>
             <div className="review-cell">
               <p>{term.term}</p>
-              <button
-                aria-label={t("voice.speakTerm")}
-                className="review-speak-button pronounce-button"
-                title={t("voice.speakTerm")}
-                type="button"
-                onClick={() => speakText(term.term, termLanguage)}
-              >
-                🔊
-              </button>
+              <div className="review-actions">
+                <button
+                  aria-label={activeLabel}
+                  aria-pressed={active}
+                  className="review-active-button"
+                  title={activeLabel}
+                  type="button"
+                  onClick={() => toggleActive(term.id)}
+                >
+                  {active ? "★" : "☆"}
+                </button>
+                <button
+                  aria-label={t("voice.speakTerm")}
+                  className="review-speak-button pronounce-button"
+                  title={t("voice.speakTerm")}
+                  type="button"
+                  onClick={() => speakText(term.term, termLanguage)}
+                >
+                  🔊
+                </button>
+              </div>
             </div>
             <span className="review-divider" aria-hidden="true">
               |
@@ -831,7 +904,8 @@ function ReviewMode({ set, termLanguage, definitionLanguage }: { set: StudySet; 
               </button>
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1039,6 +1113,7 @@ function LearnMode({
   const [sectionCompleted, setSectionCompleted] = useState<StudyTerm[]>([]);
   const [showSectionSummary, setShowSectionSummary] = useState(false);
   const [writtenInput, setWrittenInput] = useState("");
+  const writtenInputRef = useRef<HTMLInputElement | null>(null);
   const [feedback, setFeedback] = useState<{
     status: "correct" | "wrong";
     selected: string;
@@ -1170,6 +1245,42 @@ function LearnMode({
         feedbackTimeoutRef.current = null;
       }, 700);
     }
+  };
+
+  const skipWrittenAnswer = () => {
+    if (!current || feedback || showSectionSummary || phase !== "written") return;
+    playAnswerFeedback(false);
+    setFeedback({
+      status: "wrong",
+      selected: writtenInput.trim() || t("learn.noAnswer"),
+      answer: current.term,
+      prompt: current.definition,
+      term: current,
+      phase,
+    });
+  };
+
+  const insertWrittenCharacter = (character: string) => {
+    if (feedback) return;
+    const input = writtenInputRef.current;
+    const start = input?.selectionStart ?? writtenInput.length;
+    const end = input?.selectionEnd ?? start;
+    const nextValue = `${writtenInput.slice(0, start)}${character}${writtenInput.slice(end)}`;
+    setWrittenInput(nextValue);
+    window.requestAnimationFrame(() => {
+      writtenInputRef.current?.focus();
+      writtenInputRef.current?.setSelectionRange(start + character.length, start + character.length);
+    });
+  };
+
+  const showWrittenHint = () => {
+    if (!current || feedback) return;
+    const nextValue = nextHintValue(writtenInput, current.term);
+    setWrittenInput(nextValue);
+    window.requestAnimationFrame(() => {
+      writtenInputRef.current?.focus();
+      writtenInputRef.current?.setSelectionRange(nextValue.length, nextValue.length);
+    });
   };
 
   const continueLearn = () => {
@@ -1386,14 +1497,37 @@ function LearnMode({
             }}
           >
             <label htmlFor="learn-written-answer">{t("learn.writeMatchingTerm")}</label>
+            <div className="learn-letter-bank" aria-label={t("learn.letterBank")}>
+              {uniqueAnswerLetters(current.term).map((letter) => (
+                <button
+                  key={`${current.id}-letter-${letter}`}
+                  type="button"
+                  disabled={Boolean(feedback)}
+                  onClick={() => insertWrittenCharacter(letter)}
+                >
+                  {letter}
+                </button>
+              ))}
+            </div>
             <input
               id="learn-written-answer"
+              ref={writtenInputRef}
+              aria-label={t("learn.writeMatchingTerm")}
+              placeholder={t("learn.answerPlaceholder")}
               value={writtenInput}
               disabled={Boolean(feedback)}
               onChange={(event) => setWrittenInput(event.target.value)}
               autoComplete="off"
             />
-            <button disabled={Boolean(feedback) || !writtenInput.trim()}>{t("learn.check")}</button>
+            <div className="learn-written-actions">
+              <button type="button" disabled={Boolean(feedback)} onClick={showWrittenHint}>
+                {t("learn.showHint")}
+              </button>
+              <button type="button" disabled={Boolean(feedback)} onClick={skipWrittenAnswer}>
+                {t("learn.dontKnow")}
+              </button>
+              <button disabled={Boolean(feedback) || !writtenInput.trim()}>{t("learn.check")}</button>
+            </div>
           </form>
         )}
         {feedback?.status === "correct" && <p className="result">{t("learn.correctResult")}</p>}
@@ -1641,10 +1775,18 @@ function TestMode({
                 language={languageForText(set, question.shownAnswer, termLanguage, definitionLanguage)}
                 label={t("voice.speak")}
               />
-              <button onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: "true" }))}>
+              <button
+                className={answers[question.id] === "true" ? "selected" : ""}
+                aria-pressed={answers[question.id] === "true"}
+                onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: "true" }))}
+              >
                 {t("test.true")}
               </button>
-              <button onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: "false" }))}>
+              <button
+                className={answers[question.id] === "false" ? "selected" : ""}
+                aria-pressed={answers[question.id] === "false"}
+                onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: "false" }))}
+              >
                 {t("test.false")}
               </button>
             </div>

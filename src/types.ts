@@ -2,6 +2,7 @@ export type StudyTerm = {
   id: string;
   term: string;
   definition: string;
+  active?: boolean;
 };
 
 export type StudySet = {
