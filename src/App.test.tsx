@@ -319,6 +319,23 @@ describe("App", () => {
     expect(screen.queryByText("one")).not.toBeInTheDocument();
   });
 
+  it("selects and deselects every active learning term from Set Review", () => {
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(screen.getByLabelText("Deselect all terms"));
+
+    let sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+    expect(sets[0].terms.every((term: { active?: boolean }) => term.active === false)).toBe(true);
+    expect(screen.getByLabelText("Select all terms")).not.toBeChecked();
+
+    fireEvent.click(screen.getByLabelText("Select all terms"));
+
+    sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+    expect(sets[0].terms.every((term: { active?: boolean }) => term.active === true)).toBe(true);
+    expect(screen.getByLabelText("Deselect all terms")).toBeChecked();
+  });
+
   it("shows an empty practice state when every term is inactive", () => {
     seedSet();
     render(<App />);
@@ -655,6 +672,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Learn" }));
 
     const answerInput = screen.getByLabelText("Write the matching term");
+    expect(screen.getByLabelText("Answer letters").textContent).not.toBe("one");
     fireEvent.click(screen.getByRole("button", { name: "o" }));
     expect(answerInput).toHaveValue("o");
 

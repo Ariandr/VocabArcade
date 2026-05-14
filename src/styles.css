@@ -370,6 +370,30 @@ kbd {
   gap: 0.75rem;
 }
 
+.review-select-all {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #3d4668;
+  border-radius: 8px;
+  background: #252b49;
+  padding: 0 0.85rem;
+  color: #eef2ff;
+  white-space: nowrap;
+}
+
+.review-select-all input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #4d6bfe;
+}
+
+.review-select-all span {
+  font-weight: 900;
+}
+
 .review-row {
   display: grid;
   grid-template-columns: minmax(9rem, 0.82fr) auto minmax(0, 1.18fr);

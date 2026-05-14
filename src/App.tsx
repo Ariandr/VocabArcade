@@ -270,15 +270,24 @@ function formatTermCount(t: I18nContextValue["t"], locale: AppLocale, count: num
   return `${count} ${t(pluralTermKey(locale, count))}`;
 }
 
-function uniqueAnswerLetters(answer: string): string[] {
+function shuffledAnswerLetters(answer: string): string[] {
   const seen = new Set<string>();
-  return Array.from(answer).filter((character) => {
-    if (!character.trim()) return false;
+  const letters = Array.from(answer).filter((character) => {
+    if (!/\p{L}/u.test(character)) return false;
     const key = character.toLocaleLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+
+  if (letters.length <= 1) return letters;
+
+  const shuffledLetters = shuffle(letters);
+  if (shuffledLetters.join("").toLocaleLowerCase() !== letters.join("").toLocaleLowerCase()) {
+    return shuffledLetters;
+  }
+
+  return [...shuffledLetters.slice(1), shuffledLetters[0]];
 }
 
 function nextHintValue(input: string, answer: string): string {
@@ -838,12 +847,20 @@ function ReviewMode({
   const visibleTerms = set.terms.filter((term) =>
     `${term.term} ${term.definition}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
   );
+  const allTermsActive = set.terms.length > 0 && set.terms.every(isTermActive);
   const toggleActive = (termId: string) => {
     onSetChange({
       ...set,
       terms: set.terms.map((term) =>
         term.id === termId ? { ...term, active: !isTermActive(term) } : term,
       ),
+      updatedAt: new Date().toISOString(),
+    });
+  };
+  const setAllActive = (active: boolean) => {
+    onSetChange({
+      ...set,
+      terms: set.terms.map((term) => ({ ...term, active })),
       updatedAt: new Date().toISOString(),
     });
   };
@@ -857,6 +874,14 @@ function ReviewMode({
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t("review.search")}
         />
+        <label className="review-select-all">
+          <input
+            type="checkbox"
+            checked={allTermsActive}
+            onChange={(event) => setAllActive(event.target.checked)}
+          />
+          <span>{allTermsActive ? t("review.deselectAll") : t("review.selectAll")}</span>
+        </label>
       </div>
       <div className="review-list">
         {visibleTerms.map((term) => {
@@ -1127,6 +1152,10 @@ function LearnMode({
   const choices = useMemo(
     () => (phase === "multiple-choice" && current ? choicesForTerm(set, current) : []),
     [set, current, phase],
+  );
+  const writtenLetters = useMemo(
+    () => (current ? shuffledAnswerLetters(current.term) : []),
+    [current?.id, current?.term],
   );
   const progressTotal = learnProgressTotal(settings, set.terms.length);
 
@@ -1498,7 +1527,7 @@ function LearnMode({
           >
             <label htmlFor="learn-written-answer">{t("learn.writeMatchingTerm")}</label>
             <div className="learn-letter-bank" aria-label={t("learn.letterBank")}>
-              {uniqueAnswerLetters(current.term).map((letter) => (
+              {writtenLetters.map((letter) => (
                 <button
                   key={`${current.id}-letter-${letter}`}
                   type="button"

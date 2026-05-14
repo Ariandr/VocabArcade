@@ -98,6 +98,8 @@ const english = {
   "review.inactiveTooltip": "Inactive for learning. Click to include in exercises.",
   "review.noActiveTitle": "No active terms selected",
   "review.noActiveBody": "Star at least one term in Set Review to use practice modes.",
+  "review.selectAll": "Select all terms",
+  "review.deselectAll": "Deselect all terms",
 
   "edit.searchLabel": "Search editable terms",
   "edit.searchPlaceholder": "Search terms to edit",
@@ -274,6 +276,8 @@ const ukrainian: Record<TranslationKey, string> = {
   "review.inactiveTooltip": "Неактивний для навчання. Натисніть, щоб додати до вправ.",
   "review.noActiveTitle": "Не вибрано активних термінів",
   "review.noActiveBody": "Позначте зіркою хоча б один термін в Огляді набору, щоб користуватися режимами практики.",
+  "review.selectAll": "Вибрати всі терміни",
+  "review.deselectAll": "Зняти вибір з усіх термінів",
 
   "edit.searchLabel": "Пошук термінів для редагування",
   "edit.searchPlaceholder": "Шукати терміни для редагування",
@@ -450,6 +454,8 @@ const polish: Record<TranslationKey, string> = {
   "review.inactiveTooltip": "Nieaktywne do nauki. Kliknij, aby dodać do ćwiczeń.",
   "review.noActiveTitle": "Nie wybrano aktywnych terminów",
   "review.noActiveBody": "Oznacz gwiazdką co najmniej jeden termin w Przeglądzie zestawu, aby używać trybów ćwiczeń.",
+  "review.selectAll": "Zaznacz wszystkie terminy",
+  "review.deselectAll": "Odznacz wszystkie terminy",
 
   "edit.searchLabel": "Szukaj terminów do edycji",
   "edit.searchPlaceholder": "Szukaj terminów do edycji",
