@@ -70,7 +70,7 @@ export function stripDuplicatedDefinition(term: string, definition: string): str
   return stripped || term;
 }
 
-function isHeaderPair(term: string, definition: string): boolean {
+export function isHeaderPair(term: string, definition: string): boolean {
   return (
     HEADER_TERMS.has(term.toLocaleLowerCase()) &&
     HEADER_DEFINITIONS.has(definition.toLocaleLowerCase())
@@ -140,6 +140,35 @@ export function normalizeTerms(
     .map((pair) => ({ id: makeId("term"), ...pair }));
 }
 
+export function normalizeImportedTerms(
+  pairs: Array<{ id?: unknown; term: unknown; definition: unknown; active?: unknown }>,
+): StudyTerm[] {
+  const seen = new Set<string>();
+  return pairs
+    .map((pair) => {
+      const definition = cleanText(pair.definition);
+      return {
+        id: cleanText(pair.id) || makeId("term"),
+        term: stripDuplicatedDefinition(cleanText(pair.term), definition),
+        definition,
+        active: pair.active === false ? false : pair.active === true ? true : undefined,
+      };
+    })
+    .filter(
+      (pair) =>
+        pair.term.length >= MIN_TEXT_LENGTH &&
+        pair.definition.length >= MIN_TEXT_LENGTH &&
+        !isHeaderPair(pair.term, pair.definition) &&
+        !isIgnoredTermPair(pair.term, pair.definition),
+    )
+    .filter((pair) => {
+      const key = `${pair.term.toLocaleLowerCase()}::${pair.definition.toLocaleLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 export function generatedTitleFromTerms(terms: StudyTerm[]): string {
   const first = cleanText(terms[0]?.term);
   const last = cleanText(terms[terms.length - 1]?.term);
@@ -163,6 +192,80 @@ export function payloadToStudySet(payload: ImportPayload): StudySet {
     createdAt: now,
     updatedAt: now,
   };
+}
+
+export type ParsedImport =
+  | { kind: "payload"; payload: ImportPayload }
+  | { kind: "sets"; sets: StudySet[] };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStudySetLike(value: unknown): value is Partial<StudySet> {
+  if (!isRecord(value)) return false;
+  return (
+    Array.isArray(value.terms) &&
+    (typeof value.id === "string" ||
+      typeof value.title === "string" ||
+      typeof value.createdAt === "string" ||
+      typeof value.updatedAt === "string")
+  );
+}
+
+export function normalizeImportedStudySet(value: unknown): StudySet {
+  if (!isStudySetLike(value)) {
+    throw new Error("Unsupported import format.");
+  }
+
+  const rawTerms = (value.terms as unknown[]).map((item) => {
+    const record = isRecord(item) ? item : {};
+    return {
+      id: typeof record.id === "string" ? record.id : undefined,
+      term: record.term,
+      definition: record.definition,
+      active: typeof record.active === "boolean" ? record.active : undefined,
+    };
+  });
+  const terms = normalizeImportedTerms(rawTerms);
+  if (terms.length === 0) {
+    throw new Error("No valid term-definition pairs were found.");
+  }
+
+  const now = new Date().toISOString();
+  return {
+    id: cleanText(value.id) || makeId("set"),
+    title: cleanText(value.title) || generatedTitleFromTerms(terms),
+    sourceUrl: cleanText(value.sourceUrl) || undefined,
+    terms,
+    createdAt: cleanText(value.createdAt) || now,
+    updatedAt: cleanText(value.updatedAt) || now,
+  };
+}
+
+export function parseImportFile(input: string): ParsedImport {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    throw new Error("Paste study data before importing.");
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed) && parsed.every(isStudySetLike)) {
+      return { kind: "sets", sets: parsed.map(normalizeImportedStudySet) };
+    }
+
+    if (isStudySetLike(parsed)) {
+      return { kind: "sets", sets: [normalizeImportedStudySet(parsed)] };
+    }
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return { kind: "payload", payload: parseDelimitedText(trimmed) };
+    }
+    throw error;
+  }
+
+  return { kind: "payload", payload: parseManualImport(trimmed) };
 }
 
 export function parseDelimitedText(input: string): ImportPayload {

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import App from "./App";
 
@@ -212,7 +212,7 @@ describe("App", () => {
     expect(sets[0].terms[0]).toMatchObject({ term: "one", definition: "uno" });
   });
 
-  it("collapses existing duplicate sets when the source is re-imported", () => {
+  it("asks how to handle duplicate sets and replaces matching saved duplicates", () => {
     const duplicateSet = {
       id: "set-old",
       title: "Numbers",
@@ -246,12 +246,12 @@ describe("App", () => {
       );
     });
 
+    expect(screen.getByRole("dialog", { name: "Duplicate sets found" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Replace duplicated sets" }));
+
     const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
     expect(sets).toHaveLength(1);
-    expect(sets[0]).toMatchObject({
-      id: "set-old",
-      sourceUrl: "https://example.com/study-set",
-    });
+    expect(sets[0].sourceUrl).toBe("https://example.com/study-set");
     expect(sets[0].terms[0]).toMatchObject({ term: "two", definition: "dos" });
   });
 
@@ -337,6 +337,101 @@ describe("App", () => {
 
     const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
     expect(sets.map((set: { title: string }) => set.title)).toEqual(["Colors", "Numbers"]);
+  });
+
+  it("exports all saved sets from management as one JSON array", async () => {
+    seedTwoSets();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const revokeObjectURL = vi.fn();
+    const createObjectURL = vi.fn((_blob: Blob) => "blob:vocab-arcade-sets");
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectURL,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: revokeObjectURL,
+    });
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export all saved sets to JSON" }));
+
+    expect(click).toHaveBeenCalled();
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    const exportedText = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+    const exported = JSON.parse(exportedText) as Array<{ title: string }>;
+    expect(exported.map((set) => set.title)).toEqual(["Numbers", "Colors"]);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:vocab-arcade-sets");
+  });
+
+  it("imports a full saved-set JSON list from a file", async () => {
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(
+      [
+        JSON.stringify([
+          {
+            id: "set-2",
+            title: "Colors",
+            createdAt: "2026-01-03T00:00:00.000Z",
+            updatedAt: "2026-01-04T00:00:00.000Z",
+            terms: [{ id: "term-red", term: "red", definition: "rojo", active: false }],
+          },
+        ]),
+      ],
+      "sets.json",
+      { type: "application/json" },
+    );
+
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [file] } });
+    });
+
+    await waitFor(() => {
+      const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+      expect(sets.map((set: { title: string }) => set.title)).toEqual(["Colors", "Numbers"]);
+    });
+    const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+    expect(sets[0].terms[0]).toMatchObject({
+      id: "term-red",
+      term: "red",
+      definition: "rojo",
+      active: false,
+    });
+  });
+
+  it("imports a duplicate single set as a copy when selected", () => {
+    seedTwoSets();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    fireEvent.change(screen.getByLabelText("Paste JSON, CSV, or TSV"), {
+      target: {
+        value: JSON.stringify({
+          title: "Numbers",
+          terms: [{ term: "one", definition: "uno" }],
+        }),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Import pasted data" }));
+
+    expect(screen.getByRole("dialog", { name: "Duplicate sets found" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add duplicated sets as copies" }));
+
+    const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+    expect(sets).toHaveLength(3);
+    expect(sets[0].title).toBe("Numbers");
+    expect(sets[0].id).not.toBe("set-1");
+    expect(sets[0].terms[0].id).not.toBe("term-1");
   });
 
   it("shows Set Review and Set Edit as separate modes", () => {

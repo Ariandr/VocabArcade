@@ -264,6 +264,18 @@ kbd {
   grid-column: 2;
 }
 
+.saved-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.saved-panel-header h2 {
+  margin: 0;
+}
+
 .saved-list {
   display: grid;
   gap: 0.65rem;
@@ -338,6 +350,39 @@ kbd {
 .saved-action-button {
   width: auto;
   padding: 0 1.25rem;
+}
+
+.saved-export-all-button {
+  min-height: 2.75rem;
+  align-items: center;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(5, 7, 18, 0.72);
+}
+
+.duplicate-import-dialog {
+  width: min(34rem, 100%);
+  display: grid;
+  gap: 1rem;
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.35);
+}
+
+.duplicate-import-dialog h2,
+.duplicate-import-dialog p {
+  margin: 0;
+}
+
+.duplicate-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
 }
 
 .workspace {

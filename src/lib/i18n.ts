@@ -40,6 +40,7 @@ const english = {
 
   "notice.imported": "Imported {termCount} in \"{title}\".",
   "notice.updated": "Updated {termCount} in \"{title}\".",
+  "notice.importedSetCount": "Imported {count} saved sets.",
 
   "error.importFailed": "Import failed.",
   "error.fileImportFailed": "File import failed.",
@@ -72,6 +73,8 @@ const english = {
   "import.termCount": "{termCount}",
   "import.export": "Export",
   "import.exportJson": "Export to JSON",
+  "import.exportAll": "Export all",
+  "import.exportAllJson": "Export all saved sets to JSON",
   "import.editTitle": "Edit",
   "import.editTitleFor": "Edit title for {title}",
   "import.editTitleLabel": "Set title",
@@ -83,6 +86,12 @@ const english = {
   "import.delete": "Delete",
   "import.deleteSet": "Delete set",
   "import.confirmDelete": "Are you sure you want to delete \"{title}\"?",
+  "import.duplicatesTitle": "Duplicate sets found",
+  "import.duplicatesBody":
+    "{count} imported set matches a saved set. Choose whether to replace matches or add copies.",
+  "import.replaceDuplicates": "Replace duplicated sets",
+  "import.copyDuplicates": "Add duplicated sets as copies",
+  "import.cancelImport": "Cancel import",
   "bookmarklet.noPairs": "No term-definition pairs were found on this page.",
   "bookmarklet.errorPrefix": "Vocab Arcade Bookmarklet Error: ",
   "bookmarklet.errorSuffix": "Please let the developer know!",
@@ -226,6 +235,7 @@ const ukrainian: Record<TranslationKey, string> = {
 
   "notice.imported": "Імпортовано {termCount} у \"{title}\".",
   "notice.updated": "Оновлено {termCount} у \"{title}\".",
+  "notice.importedSetCount": "Імпортовано {count} збережених наборів.",
 
   "error.importFailed": "Не вдалося імпортувати.",
   "error.fileImportFailed": "Не вдалося імпортувати файл.",
@@ -258,6 +268,8 @@ const ukrainian: Record<TranslationKey, string> = {
   "import.termCount": "{termCount}",
   "import.export": "Експорт",
   "import.exportJson": "Експортувати в JSON",
+  "import.exportAll": "Експортувати все",
+  "import.exportAllJson": "Експортувати всі збережені набори в JSON",
   "import.editTitle": "Редагувати",
   "import.editTitleFor": "Редагувати назву для {title}",
   "import.editTitleLabel": "Назва набору",
@@ -269,6 +281,12 @@ const ukrainian: Record<TranslationKey, string> = {
   "import.delete": "Видалити",
   "import.deleteSet": "Видалити набір",
   "import.confirmDelete": "Ви впевнені, що хочете видалити \"{title}\"?",
+  "import.duplicatesTitle": "Знайдено дублікати наборів",
+  "import.duplicatesBody":
+    "{count} імпортований набір збігається зі збереженим. Виберіть, замінити збіги чи додати копії.",
+  "import.replaceDuplicates": "Замінити дублікати",
+  "import.copyDuplicates": "Додати дублікати як копії",
+  "import.cancelImport": "Скасувати імпорт",
   "bookmarklet.noPairs": "На цій сторінці не знайдено пар термін-визначення.",
   "bookmarklet.errorPrefix": "Помилка букмарклета Vocab Arcade: ",
   "bookmarklet.errorSuffix": "Будь ласка, повідомте розробнику!",
@@ -412,6 +430,7 @@ const polish: Record<TranslationKey, string> = {
 
   "notice.imported": "Zaimportowano {termCount} do \"{title}\".",
   "notice.updated": "Zaktualizowano {termCount} w \"{title}\".",
+  "notice.importedSetCount": "Zaimportowano {count} zapisane zestawy.",
 
   "error.importFailed": "Import nie powiódł się.",
   "error.fileImportFailed": "Import pliku nie powiódł się.",
@@ -444,6 +463,8 @@ const polish: Record<TranslationKey, string> = {
   "import.termCount": "{termCount}",
   "import.export": "Eksport",
   "import.exportJson": "Eksportuj do JSON",
+  "import.exportAll": "Eksportuj wszystko",
+  "import.exportAllJson": "Eksportuj wszystkie zapisane zestawy do JSON",
   "import.editTitle": "Edytuj",
   "import.editTitleFor": "Edytuj tytuł zestawu {title}",
   "import.editTitleLabel": "Tytuł zestawu",
@@ -455,6 +476,12 @@ const polish: Record<TranslationKey, string> = {
   "import.delete": "Usuń",
   "import.deleteSet": "Usuń zestaw",
   "import.confirmDelete": "Czy na pewno chcesz usunąć \"{title}\"?",
+  "import.duplicatesTitle": "Znaleziono duplikaty zestawów",
+  "import.duplicatesBody":
+    "{count} importowany zestaw pasuje do zapisanego zestawu. Wybierz, czy zastąpić pasujące zestawy, czy dodać kopie.",
+  "import.replaceDuplicates": "Zastąp duplikaty",
+  "import.copyDuplicates": "Dodaj duplikaty jako kopie",
+  "import.cancelImport": "Anuluj import",
   "bookmarklet.noPairs": "Na tej stronie nie znaleziono par termin-definicja.",
   "bookmarklet.errorPrefix": "Błąd bookmarkletu Vocab Arcade: ",
   "bookmarklet.errorSuffix": "Powiadom dewelopera!",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   generatedTitleFromTerms,
   normalizeTerms,
+  parseImportFile,
   parseManualImport,
   payloadToStudySet,
   validateImportMessage,
@@ -77,6 +78,70 @@ describe("import helpers", () => {
 
     expect(payload.title).toBeUndefined();
     expect(payload.terms).toHaveLength(1);
+  });
+
+  it("parses a single exported study set JSON file", () => {
+    const parsed = parseImportFile(
+      JSON.stringify({
+        id: "set-1",
+        title: "Numbers",
+        sourceUrl: "https://example.com/numbers",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        terms: [{ id: "term-1", term: "one", definition: "uno", active: false }],
+      }),
+    );
+
+    expect(parsed.kind).toBe("sets");
+    if (parsed.kind !== "sets") return;
+    expect(parsed.sets).toHaveLength(1);
+    expect(parsed.sets[0]).toMatchObject({
+      id: "set-1",
+      title: "Numbers",
+      sourceUrl: "https://example.com/numbers",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    });
+    expect(parsed.sets[0].terms[0]).toMatchObject({
+      id: "term-1",
+      term: "one",
+      definition: "uno",
+      active: false,
+    });
+  });
+
+  it("parses an exported study set list JSON file", () => {
+    const parsed = parseImportFile(
+      JSON.stringify([
+        {
+          id: "set-1",
+          title: "Numbers",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          terms: [{ id: "term-1", term: "one", definition: "uno" }],
+        },
+        {
+          id: "set-2",
+          title: "Colors",
+          createdAt: "2026-01-03T00:00:00.000Z",
+          updatedAt: "2026-01-04T00:00:00.000Z",
+          terms: [{ id: "term-2", term: "red", definition: "rojo" }],
+        },
+      ]),
+    );
+
+    expect(parsed.kind).toBe("sets");
+    if (parsed.kind !== "sets") return;
+    expect(parsed.sets.map((set) => set.title)).toEqual(["Numbers", "Colors"]);
+  });
+
+  it("keeps JSON arrays of term rows as a single payload import", () => {
+    const parsed = parseImportFile(JSON.stringify([{ term: "one", definition: "uno" }]));
+
+    expect(parsed.kind).toBe("payload");
+    if (parsed.kind !== "payload") return;
+    expect(parsed.payload.title).toBeUndefined();
+    expect(parsed.payload.terms).toEqual([{ term: "one", definition: "uno" }]);
   });
 
   it("creates a StudySet from a payload", () => {

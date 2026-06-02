@@ -24,7 +24,7 @@ import {
   type TestSettings,
 } from "./lib/games";
 import {
-  parseManualImport,
+  parseImportFile,
   payloadToStudySet,
   validateImportMessage,
   makeId,
@@ -101,6 +101,58 @@ function termsSignature(terms: StudyTerm[]): string {
 function setSignature(set: StudySet): string {
   return `${set.sourceUrl ?? ""}|${set.title.toLocaleLowerCase()}|${termsSignature(set.terms)}`;
 }
+
+function setContentSignature(set: StudySet): string {
+  return `${set.title.toLocaleLowerCase()}|${termsSignature(set.terms)}`;
+}
+
+function findDuplicateSet(importedSet: StudySet, existingSets: StudySet[]): StudySet | undefined {
+  return findDuplicateSets(importedSet, existingSets)[0];
+}
+
+function findDuplicateSets(importedSet: StudySet, existingSets: StudySet[]): StudySet[] {
+  const idMatches = existingSets.filter((set) => set.id === importedSet.id);
+  if (idMatches.length > 0) return idMatches;
+
+  if (importedSet.sourceUrl) {
+    const sourceMatches = existingSets.filter((set) => set.sourceUrl === importedSet.sourceUrl);
+    if (sourceMatches.length > 0) return sourceMatches;
+  }
+
+  const contentSignature = setContentSignature(importedSet);
+  return existingSets.filter((set) => setContentSignature(set) === contentSignature);
+}
+
+function cloneImportedSet(set: StudySet): StudySet {
+  const now = new Date().toISOString();
+  return {
+    ...set,
+    id: makeId("set"),
+    createdAt: now,
+    updatedAt: now,
+    terms: set.terms.map((term) => ({ ...term, id: makeId("term") })),
+  };
+}
+
+function downloadJson(filename: string, value: unknown): void {
+  const data = JSON.stringify(value, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+type DuplicateImportResolution = "replace" | "copy";
+
+type PendingDuplicateImport = {
+  importedSets: StudySet[];
+  duplicateCount: number;
+};
 
 type VoiceLanguage = "auto" | "en-US" | "pl-PL" | "uk-UA";
 let activeUtterance: SpeechSynthesisUtterance | null = null;
@@ -397,6 +449,8 @@ function App() {
   const [isManaging, setIsManaging] = useState(() => !loadSets().length);
   const [mode, setMode] = useState<Mode>("review");
   const [notice, setNotice] = useState("");
+  const [pendingDuplicateImport, setPendingDuplicateImport] =
+    useState<PendingDuplicateImport | null>(null);
   const lastImportRef = useRef<{ signature: string; receivedAt: number } | null>(null);
   const selectedSet = sets.find((set) => set.id === selectedId) ?? null;
   const isImportRoute = window.location.hash.startsWith("#/import");
@@ -406,6 +460,67 @@ function App() {
   const setLocale = (nextLocale: AppLocale) => {
     setLocaleState(nextLocale);
     saveAppLocale(nextLocale);
+  };
+
+  const commitImportedSets = (
+    importedSets: StudySet[],
+    duplicateResolution: DuplicateImportResolution = "replace",
+  ) => {
+    if (importedSets.length === 0) return;
+    const currentSets = loadSets();
+    const duplicateIds = new Set(
+      importedSets
+        .flatMap((importedSet) => findDuplicateSets(importedSet, currentSets).map((set) => set.id)),
+    );
+    const occupiedIds = new Set(currentSets.map((set) => set.id));
+    const preparedSets = importedSets.map((importedSet) => {
+      const duplicate = findDuplicateSet(importedSet, currentSets);
+      if (duplicateResolution === "copy" && (duplicate || occupiedIds.has(importedSet.id))) {
+        const copiedSet = cloneImportedSet(importedSet);
+        occupiedIds.add(copiedSet.id);
+        return copiedSet;
+      }
+      occupiedIds.add(importedSet.id);
+      return importedSet;
+    });
+    const next =
+      duplicateResolution === "replace"
+        ? [
+            ...preparedSets,
+            ...currentSets.filter((set) => !duplicateIds.has(set.id)),
+          ]
+        : [...preparedSets, ...currentSets];
+
+    saveSets(next);
+    setSets(next);
+    setSelectedId(preparedSets[0].id);
+    setIsManaging(preparedSets.length > 1);
+    setMode("review");
+    setPendingDuplicateImport(null);
+    setNotice(
+      preparedSets.length === 1
+        ? t("notice.imported", {
+            termCount: formatTermCount(t, locale, preparedSets[0].terms.length),
+            title: preparedSets[0].title,
+          })
+        : t("notice.importedSetCount", { count: preparedSets.length }),
+    );
+    window.location.hash = "";
+  };
+
+  const addImportedStudySets = (importedSets: StudySet[]) => {
+    if (importedSets.length === 0) return;
+    const currentSets = loadSets();
+    const duplicateCount = importedSets.reduce(
+      (count, set) => count + findDuplicateSets(set, currentSets).length,
+      0,
+    );
+    if (duplicateCount > 0) {
+      setPendingDuplicateImport({ importedSets, duplicateCount });
+      setIsManaging(true);
+      return;
+    }
+    commitImportedSets(importedSets);
   };
 
   const addImportedSet = (payload: ImportPayload) => {
@@ -420,37 +535,7 @@ function App() {
       return;
     }
     lastImportRef.current = { signature, receivedAt: now };
-
-    const currentSets = loadSets();
-    const isSameImport = (set: StudySet) =>
-      importedSet.sourceUrl
-        ? set.sourceUrl === importedSet.sourceUrl
-        : setSignature(set) === signature;
-    const existingSet = currentSets.find(isSameImport);
-    const nextSet = existingSet
-      ? {
-          ...importedSet,
-          id: existingSet.id,
-          createdAt: existingSet.createdAt,
-          updatedAt: new Date().toISOString(),
-        }
-      : importedSet;
-    const next = existingSet
-      ? [nextSet, ...currentSets.filter((set) => !isSameImport(set))]
-      : [nextSet, ...currentSets];
-
-    saveSets(next);
-    setSets(next);
-    setSelectedId(nextSet.id);
-    setIsManaging(false);
-    setMode("review");
-    setNotice(
-      t(existingSet ? "notice.updated" : "notice.imported", {
-        termCount: formatTermCount(t, locale, nextSet.terms.length),
-        title: nextSet.title,
-      }),
-    );
-    window.location.hash = "";
+    addImportedStudySets([importedSet]);
   };
 
   useEffect(() => {
@@ -566,6 +651,7 @@ function App() {
       ) : (
         <ImportScreen 
           onImport={addImportedSet} 
+          onImportSets={addImportedStudySets}
           sets={sets} 
           onOpenSet={(id) => { setSelectedId(id); setIsManaging(false); }} 
           onDeleteSet={handleRemoveSet} 
@@ -573,8 +659,55 @@ function App() {
           onReorderSets={reorderSets}
         />
       )}
+      {pendingDuplicateImport && (
+        <DuplicateImportDialog
+          duplicateCount={pendingDuplicateImport.duplicateCount}
+          onCancel={() => setPendingDuplicateImport(null)}
+          onCopy={() => commitImportedSets(pendingDuplicateImport.importedSets, "copy")}
+          onReplace={() => commitImportedSets(pendingDuplicateImport.importedSets, "replace")}
+        />
+      )}
     </main>
     </I18nContext.Provider>
+  );
+}
+
+function DuplicateImportDialog({
+  duplicateCount,
+  onCancel,
+  onCopy,
+  onReplace,
+}: {
+  duplicateCount: number;
+  onCancel: () => void;
+  onCopy: () => void;
+  onReplace: () => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="duplicate-import-title"
+        aria-modal="true"
+        className="panel duplicate-import-dialog"
+        role="dialog"
+      >
+        <h2 id="duplicate-import-title">{t("import.duplicatesTitle")}</h2>
+        <p>{t("import.duplicatesBody", { count: duplicateCount })}</p>
+        <div className="duplicate-import-actions">
+          <button type="button" onClick={onReplace}>
+            {t("import.replaceDuplicates")}
+          </button>
+          <button className="secondary-button" type="button" onClick={onCopy}>
+            {t("import.copyDuplicates")}
+          </button>
+          <button className="secondary-button" type="button" onClick={onCancel}>
+            {t("import.cancelImport")}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -592,6 +725,7 @@ function ImportReceiver() {
 
 function ImportScreen({
   onImport,
+  onImportSets,
   sets,
   onOpenSet,
   onDeleteSet,
@@ -599,6 +733,7 @@ function ImportScreen({
   onReorderSets,
 }: {
   onImport: (payload: ImportPayload) => void;
+  onImportSets: (sets: StudySet[]) => void;
   sets: StudySet[];
   onOpenSet: (id: string) => void;
   onDeleteSet: (id: string) => void;
@@ -629,7 +764,12 @@ function ImportScreen({
   const importManual = () => {
     setError("");
     try {
-      onImport(parseManualImport(manualText));
+      const parsed = parseImportFile(manualText);
+      if (parsed.kind === "sets") {
+        onImportSets(parsed.sets);
+      } else {
+        onImport(parsed.payload);
+      }
       setManualText("");
     } catch (importError) {
       setError(importErrorMessage(t, importError, "error.importFailed"));
@@ -667,16 +807,11 @@ function ImportScreen({
   };
 
   const exportSet = (set: StudySet) => {
-    const data = JSON.stringify(set, null, 2);
-    const blob = new Blob([data], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${set.title}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadJson(`${set.title}.json`, set);
+  };
+
+  const exportAllSets = () => {
+    downloadJson("vocab-arcade-sets.json", sets);
   };
 
   const importFile = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -686,7 +821,12 @@ function ImportScreen({
     reader.onload = (e) => {
       try {
         const text = e.target?.result as string;
-        onImport(parseManualImport(text));
+        const parsed = parseImportFile(text);
+        if (parsed.kind === "sets") {
+          onImportSets(parsed.sets);
+        } else {
+          onImport(parsed.payload);
+        }
         setError("");
       } catch (importError) {
         setError(importErrorMessage(t, importError, "error.fileImportFailed"));
@@ -747,7 +887,17 @@ function ImportScreen({
 
       {sets.length > 0 && (
         <div className="panel saved-panel" style={{ marginTop: '1rem' }}>
-          <h2>{t("import.savedTitle")}</h2>
+          <div className="saved-panel-header">
+            <h2>{t("import.savedTitle")}</h2>
+            <button
+              className="secondary-button saved-action-button saved-export-all-button"
+              type="button"
+              onClick={exportAllSets}
+              aria-label={t("import.exportAllJson")}
+            >
+              {t("import.exportAll")}
+            </button>
+          </div>
           <div className="saved-list">
             {sets.map((set, index) => {
               const isEditing = editingSetId === set.id;
