@@ -483,13 +483,22 @@ function App() {
       occupiedIds.add(importedSet.id);
       return importedSet;
     });
+    const placedImportedIds = new Set<string>();
     const next =
       duplicateResolution === "replace"
         ? [
-            ...preparedSets,
-            ...currentSets.filter((set) => !duplicateIds.has(set.id)),
+            ...currentSets.flatMap((currentSet) => {
+              if (!duplicateIds.has(currentSet.id)) return [currentSet];
+              const importedSet = preparedSets.find((preparedSet) =>
+                findDuplicateSets(preparedSet, currentSets).some((set) => set.id === currentSet.id),
+              );
+              if (!importedSet || placedImportedIds.has(importedSet.id)) return [];
+              placedImportedIds.add(importedSet.id);
+              return [importedSet];
+            }),
+            ...preparedSets.filter((set) => !placedImportedIds.has(set.id)),
           ]
-        : [...preparedSets, ...currentSets];
+        : [...currentSets, ...preparedSets];
 
     saveSets(next);
     setSets(next);

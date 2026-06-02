@@ -398,10 +398,10 @@ describe("App", () => {
 
     await waitFor(() => {
       const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
-      expect(sets.map((set: { title: string }) => set.title)).toEqual(["Colors", "Numbers"]);
+      expect(sets.map((set: { title: string }) => set.title)).toEqual(["Numbers", "Colors"]);
     });
     const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
-    expect(sets[0].terms[0]).toMatchObject({
+    expect(sets[1].terms[0]).toMatchObject({
       id: "term-red",
       term: "red",
       definition: "rojo",
@@ -429,9 +429,9 @@ describe("App", () => {
 
     const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
     expect(sets).toHaveLength(3);
-    expect(sets[0].title).toBe("Numbers");
-    expect(sets[0].id).not.toBe("set-1");
-    expect(sets[0].terms[0].id).not.toBe("term-1");
+    expect(sets[2].title).toBe("Numbers");
+    expect(sets[2].id).not.toBe("set-1");
+    expect(sets[2].terms[0].id).not.toBe("term-1");
   });
 
   it("shows Set Review and Set Edit as separate modes", () => {
