@@ -28,6 +28,28 @@ describe("App", () => {
     );
   };
 
+  const seedTwoSets = () => {
+    localStorage.setItem(
+      "vocab-arcade:sets",
+      JSON.stringify([
+        {
+          id: "set-1",
+          title: "Numbers",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          terms: [{ id: "term-1", term: "one", definition: "uno" }],
+        },
+        {
+          id: "set-2",
+          title: "Colors",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          terms: [{ id: "term-2", term: "red", definition: "rojo" }],
+        },
+      ]),
+    );
+  };
+
   const seedLargeSet = () => {
     localStorage.setItem(
       "vocab-arcade:sets",
@@ -231,6 +253,90 @@ describe("App", () => {
       sourceUrl: "https://example.com/study-set",
     });
     expect(sets[0].terms[0]).toMatchObject({ term: "two", definition: "dos" });
+  });
+
+  it("uses first and last pasted terms as the generated pasted set title", () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Paste JSON, CSV, or TSV"), {
+      target: { value: "alpha\tfirst\nomega\tlast" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Import pasted data" }));
+
+    expect(screen.getByRole("heading", { name: "alpha ... omega" })).toBeInTheDocument();
+    const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+    expect(sets[0].title).toBe("alpha ... omega");
+  });
+
+  it("renames saved sets from management and updates persisted order data", () => {
+    seedTwoSets();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit title for Numbers" }));
+    fireEvent.change(screen.getByLabelText("Set title"), {
+      target: { value: "Renamed Numbers" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getAllByText("Renamed Numbers")).toHaveLength(2);
+    const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+    expect(sets[0].title).toBe("Renamed Numbers");
+    expect(sets[0].updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("cancels and ignores empty saved set title edits", () => {
+    seedTwoSets();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit title for Numbers" }));
+    fireEvent.change(screen.getByLabelText("Set title"), {
+      target: { value: "Draft Title" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getAllByText("Numbers")).toHaveLength(2);
+    expect(screen.queryByText("Draft Title")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit title for Numbers" }));
+    fireEvent.change(screen.getByLabelText("Set title"), {
+      target: { value: "   " },
+    });
+
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+    expect(sets[0].title).toBe("Numbers");
+  });
+
+  it("reorders saved sets with move controls", () => {
+    seedTwoSets();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Colors up" }));
+
+    const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+    expect(sets.map((set: { title: string }) => set.title)).toEqual(["Colors", "Numbers"]);
+    expect(screen.getAllByRole("button", { name: /Move .* down/ })[0]).toHaveAccessibleName("Move Colors down");
+  });
+
+  it("reorders saved sets with drag and drop", () => {
+    seedTwoSets();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    const rows = document.querySelectorAll(".saved-set-row");
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+    };
+    fireEvent.dragStart(rows[0], { dataTransfer });
+    fireEvent.dragOver(rows[1], { dataTransfer });
+    fireEvent.drop(rows[1], { dataTransfer });
+
+    const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+    expect(sets.map((set: { title: string }) => set.title)).toEqual(["Colors", "Numbers"]);
   });
 
   it("shows Set Review and Set Edit as separate modes", () => {

@@ -140,6 +140,14 @@ export function normalizeTerms(
     .map((pair) => ({ id: makeId("term"), ...pair }));
 }
 
+export function generatedTitleFromTerms(terms: StudyTerm[]): string {
+  const first = cleanText(terms[0]?.term);
+  const last = cleanText(terms[terms.length - 1]?.term);
+  if (!first) return "Imported study set";
+  if (!last || first === last) return first;
+  return `${first} ... ${last}`;
+}
+
 export function payloadToStudySet(payload: ImportPayload): StudySet {
   const terms = normalizeTerms(payload.terms);
   if (terms.length === 0) {
@@ -149,7 +157,7 @@ export function payloadToStudySet(payload: ImportPayload): StudySet {
   const now = new Date().toISOString();
   return {
     id: makeId("set"),
-    title: cleanText(payload.title) || "Imported study set",
+    title: cleanText(payload.title) || generatedTitleFromTerms(terms),
     sourceUrl: cleanText(payload.sourceUrl) || undefined,
     terms,
     createdAt: now,
@@ -173,7 +181,6 @@ export function parseDelimitedText(input: string): ImportPayload {
     .filter((pair): pair is { term: string; definition: string } => Boolean(pair));
 
   return {
-    title: "Pasted study set",
     terms,
   };
 }
@@ -188,7 +195,6 @@ export function parseManualImport(input: string): ImportPayload {
     const parsed = JSON.parse(trimmed) as Partial<ImportPayload> | unknown[];
     if (Array.isArray(parsed)) {
       return {
-        title: "Pasted study set",
         terms: parsed.map((item) => {
           const record = item as Record<string, unknown>;
           return {

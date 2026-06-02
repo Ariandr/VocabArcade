@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  generatedTitleFromTerms,
   normalizeTerms,
   parseManualImport,
   payloadToStudySet,
@@ -52,6 +53,7 @@ describe("import helpers", () => {
   it("parses CSV and TSV pasted data", () => {
     const payload = parseManualImport("one\tuno\ntwo,dos");
 
+    expect(payload.title).toBeUndefined();
     expect(payload.terms).toEqual([
       { term: "one", definition: "uno" },
       { term: "two", definition: "dos" },
@@ -70,6 +72,13 @@ describe("import helpers", () => {
     expect(payload.terms).toHaveLength(1);
   });
 
+  it("leaves JSON array pasted data untitled", () => {
+    const payload = parseManualImport(JSON.stringify([{ term: "one", definition: "uno" }]));
+
+    expect(payload.title).toBeUndefined();
+    expect(payload.terms).toHaveLength(1);
+  });
+
   it("creates a StudySet from a payload", () => {
     const set = payloadToStudySet({
       title: "Numbers",
@@ -80,6 +89,34 @@ describe("import helpers", () => {
     expect(set.title).toBe("Numbers");
     expect(set.terms[0].id).toMatch(/^term-/);
     expect(set.sourceUrl).toBe("https://example.com/study-set");
+  });
+
+  it("generates a title from untitled payload terms", () => {
+    const set = payloadToStudySet({
+      terms: [
+        { term: "one", definition: "uno" },
+        { term: "two", definition: "dos" },
+      ],
+    });
+
+    expect(set.title).toBe("one ... two");
+  });
+
+  it("uses the only term as an untitled single-term payload title", () => {
+    const set = payloadToStudySet({
+      terms: [{ term: "one", definition: "uno" }],
+    });
+
+    expect(set.title).toBe("one");
+  });
+
+  it("generates titles from normalized terms", () => {
+    expect(
+      generatedTitleFromTerms([
+        { id: "term-1", term: "first", definition: "definition" },
+        { id: "term-2", term: "last", definition: "definition" },
+      ]),
+    ).toBe("first ... last");
   });
 
   it("validates bookmarklet messages", () => {

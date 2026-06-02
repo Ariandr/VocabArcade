@@ -269,6 +269,17 @@ kbd {
   gap: 0.65rem;
 }
 
+.saved-set-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.saved-set-row.dragging {
+  opacity: 0.55;
+}
+
 .saved-list button {
   display: flex;
   min-height: 4rem;
@@ -277,6 +288,56 @@ kbd {
   padding: 0.8rem 1rem;
   background: #262c49;
   text-align: left;
+}
+
+.saved-drag-handle {
+  width: 3rem;
+  min-width: 3rem;
+  justify-content: center;
+  color: #c9d1f0;
+  font-size: 1.6rem;
+  cursor: grab;
+}
+
+.saved-open-button {
+  min-width: 0;
+}
+
+.saved-edit-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+}
+
+.saved-edit-form input {
+  min-height: 4rem;
+}
+
+.saved-order-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(2.8rem, auto));
+  gap: 0.35rem;
+}
+
+.saved-order-controls button {
+  justify-content: center;
+  min-width: 2.8rem;
+  padding: 0.8rem;
+}
+
+.saved-order-controls button:disabled,
+.saved-edit-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.secondary-button {
+  background: #303956;
+}
+
+.saved-action-button {
+  width: auto;
+  padding: 0 1.25rem;
 }
 
 .workspace {

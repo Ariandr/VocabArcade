@@ -481,6 +481,26 @@ function App() {
     if (next.length === 0) setIsManaging(true);
   };
 
+  const renameSet = (id: string, title: string) => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) return;
+    const next = sets.map((set) =>
+      set.id === id ? { ...set, title: trimmedTitle, updatedAt: new Date().toISOString() } : set,
+    );
+    saveSets(next);
+    setSets(next);
+  };
+
+  const reorderSets = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+    if (fromIndex >= sets.length || toIndex >= sets.length) return;
+    const next = [...sets];
+    const [movedSet] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, movedSet);
+    saveSets(next);
+    setSets(next);
+  };
+
   return (
     <I18nContext.Provider value={{ locale, setLocale, t }}>
     <main className="app-shell">
@@ -549,6 +569,8 @@ function App() {
           sets={sets} 
           onOpenSet={(id) => { setSelectedId(id); setIsManaging(false); }} 
           onDeleteSet={handleRemoveSet} 
+          onRenameSet={renameSet}
+          onReorderSets={reorderSets}
         />
       )}
     </main>
@@ -573,15 +595,22 @@ function ImportScreen({
   sets,
   onOpenSet,
   onDeleteSet,
+  onRenameSet,
+  onReorderSets,
 }: {
   onImport: (payload: ImportPayload) => void;
   sets: StudySet[];
   onOpenSet: (id: string) => void;
   onDeleteSet: (id: string) => void;
+  onRenameSet: (id: string, title: string) => void;
+  onReorderSets: (fromIndex: number, toIndex: number) => void;
 }) {
   const { locale, t } = useI18n();
   const [manualText, setManualText] = useState("");
   const [error, setError] = useState("");
+  const [editingSetId, setEditingSetId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [draggingSetId, setDraggingSetId] = useState<string | null>(null);
   const bookmarklet = useMemo(
     () =>
       buildBookmarklet(currentAppUrl(), {
@@ -611,6 +640,30 @@ function ImportScreen({
     if (window.confirm(t("import.confirmDelete", { title: set.title }))) {
       onDeleteSet(set.id);
     }
+  };
+
+  const startEditingSet = (set: StudySet) => {
+    setEditingSetId(set.id);
+    setEditingTitle(set.title);
+  };
+
+  const saveEditingSet = (set: StudySet) => {
+    if (!editingTitle.trim()) return;
+    onRenameSet(set.id, editingTitle);
+    setEditingSetId(null);
+    setEditingTitle("");
+  };
+
+  const moveSet = (index: number, direction: -1 | 1) => {
+    onReorderSets(index, index + direction);
+  };
+
+  const handleDropSet = (targetId: string) => {
+    if (!draggingSetId || draggingSetId === targetId) return;
+    const fromIndex = sets.findIndex((set) => set.id === draggingSetId);
+    const toIndex = sets.findIndex((set) => set.id === targetId);
+    onReorderSets(fromIndex, toIndex);
+    setDraggingSetId(null);
   };
 
   const exportSet = (set: StudySet) => {
@@ -696,29 +749,108 @@ function ImportScreen({
         <div className="panel saved-panel" style={{ marginTop: '1rem' }}>
           <h2>{t("import.savedTitle")}</h2>
           <div className="saved-list">
-            {sets.map((set) => (
-              <div key={set.id} style={{ display: 'flex', gap: '0.5rem' }}>
-                <button style={{ flex: 1 }} onClick={() => onOpenSet(set.id)}>
-                  <strong>{set.title}</strong>
-                  <span>{t("import.termCount", { termCount: formatTermCount(t, locale, set.terms.length) })}</span>
+            {sets.map((set, index) => {
+              const isEditing = editingSetId === set.id;
+              return (
+              <div
+                className={`saved-set-row ${draggingSetId === set.id ? "dragging" : ""}`}
+                draggable
+                key={set.id}
+                onDragStart={(event) => {
+                  setDraggingSetId(set.id);
+                  event.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={() => handleDropSet(set.id)}
+                onDragEnd={() => setDraggingSetId(null)}
+              >
+                <button
+                  className="saved-drag-handle"
+                  type="button"
+                  aria-label={t("import.dragSet", { title: set.title })}
+                  title={t("import.dragSet", { title: set.title })}
+                >
+                  ≡
                 </button>
-                <button 
+                {isEditing ? (
+                  <div className="saved-edit-form">
+                    <input
+                      aria-label={t("import.editTitleLabel")}
+                      value={editingTitle}
+                      onChange={(event) => setEditingTitle(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") saveEditingSet(set);
+                        if (event.key === "Escape") setEditingSetId(null);
+                      }}
+                    />
+                    <button onClick={() => saveEditingSet(set)} disabled={!editingTitle.trim()}>
+                      {t("import.saveTitle")}
+                    </button>
+                    <button
+                      className="secondary-button"
+                      onClick={() => {
+                        setEditingSetId(null);
+                        setEditingTitle("");
+                      }}
+                    >
+                      {t("import.cancelEdit")}
+                    </button>
+                  </div>
+                ) : (
+                  <button className="saved-open-button" onClick={() => onOpenSet(set.id)}>
+                    <strong>{set.title}</strong>
+                    <span>{t("import.termCount", { termCount: formatTermCount(t, locale, set.terms.length) })}</span>
+                  </button>
+                )}
+                <div className="saved-order-controls">
+                  <button
+                    type="button"
+                    disabled={index === 0}
+                    onClick={() => moveSet(index, -1)}
+                    aria-label={t("import.moveUp", { title: set.title })}
+                    title={t("import.moveUp", { title: set.title })}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    disabled={index === sets.length - 1}
+                    onClick={() => moveSet(index, 1)}
+                    aria-label={t("import.moveDown", { title: set.title })}
+                    title={t("import.moveDown", { title: set.title })}
+                  >
+                    ↓
+                  </button>
+                </div>
+                {!isEditing && (
+                  <button
+                    onClick={() => startEditingSet(set)}
+                    className="secondary-button saved-action-button"
+                    aria-label={t("import.editTitleFor", { title: set.title })}
+                  >
+                    {t("import.editTitle")}
+                  </button>
+                )}
+                <button
                   onClick={(e) => { e.stopPropagation(); exportSet(set); }} 
-                  style={{ width: 'auto', background: '#303956', padding: '0 1.25rem' }}
+                  className="secondary-button saved-action-button"
                   aria-label={t("import.exportJson")}
                 >
                   {t("import.export")}
                 </button>
                 <button 
                   onClick={(e) => { e.stopPropagation(); confirmDelete(set); }} 
-                  className="danger"
-                  style={{ width: 'auto', padding: '0 1.25rem' }}
+                  className="danger saved-action-button"
                   aria-label={t("import.deleteSet")}
                 >
                   {t("import.delete")}
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
