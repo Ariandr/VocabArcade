@@ -1150,7 +1150,7 @@ function MergeSetsDialog({
             })}
           </p>
         )}
-        <div className="duplicate-import-actions">
+        <div className="duplicate-import-actions merge-actions">
           <button className="secondary-button" type="button" onClick={onCancel}>
             {t("merge.cancel")}
           </button>

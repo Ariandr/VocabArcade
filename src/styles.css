@@ -392,6 +392,17 @@ kbd {
   gap: 0.65rem;
 }
 
+.merge-actions {
+  justify-content: flex-end;
+}
+
+.merge-actions button {
+  min-height: 2.75rem;
+  min-width: 8.5rem;
+  justify-content: center;
+  padding: 0 1.25rem;
+}
+
 .merge-sets-dialog label {
   display: grid;
   gap: 0.4rem;
