@@ -69,6 +69,38 @@ describe("App", () => {
     );
   };
 
+  const seedMergeSets = () => {
+    localStorage.setItem(
+      "vocab-arcade:sets",
+      JSON.stringify([
+        {
+          id: "set-0",
+          title: "Animals",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          terms: [{ id: "term-dog", term: "dog", definition: "perro" }],
+        },
+        {
+          id: "set-1",
+          title: "Numbers",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          terms: [{ id: "term-1", term: "one", definition: "uno" }],
+        },
+        {
+          id: "set-2",
+          title: "Colors",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          terms: [
+            { id: "term-red-duplicate", term: "ONE", definition: " uno " },
+            { id: "term-1", term: "red", definition: "rojo", active: false },
+          ],
+        },
+      ]),
+    );
+  };
+
   it("renders the import flow", () => {
     render(<App />);
 
@@ -368,6 +400,84 @@ describe("App", () => {
     const exported = JSON.parse(exportedText) as Array<{ title: string }>;
     expect(exported.map((set) => set.title)).toEqual(["Numbers", "Colors"]);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:vocab-arcade-sets");
+  });
+
+  it("shows merge beside export all and disables it with fewer than two saved sets", () => {
+    seedSet();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+
+    const actions = document.querySelector(".saved-panel-actions");
+    expect(actions?.textContent).toContain("Merge");
+    expect(actions?.textContent).toContain("Export all");
+    expect(actions?.textContent?.indexOf("Merge")).toBeLessThan(
+      actions?.textContent?.indexOf("Export all") ?? 0,
+    );
+    expect(screen.getByRole("button", { name: "Merge saved sets" })).toBeDisabled();
+  });
+
+  it("opens and cancels the merge saved sets dialog", () => {
+    seedTwoSets();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Merge saved sets" }));
+
+    expect(screen.getByRole("dialog", { name: "Merge saved sets" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Set to receive words")).toHaveValue("set-1");
+    expect(screen.getByLabelText("Set to merge and remove")).toHaveValue("set-2");
+    expect(
+      screen.getByText(
+        'Words from "Colors" (1 term) will be added to "Numbers" (1 term). Duplicate words already in "Numbers" will be skipped. "Colors" will then be removed. Do you want to continue?',
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Merge saved sets" })).not.toBeInTheDocument();
+  });
+
+  it("prevents selecting the same set as both merge target and source", () => {
+    seedMergeSets();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Merge saved sets" }));
+    fireEvent.change(screen.getByLabelText("Set to receive words"), {
+      target: { value: "set-1" },
+    });
+
+    const sourceSelect = screen.getByLabelText("Set to merge and remove");
+    expect(sourceSelect).not.toHaveValue("set-1");
+    expect(Array.from(sourceSelect.querySelectorAll("option")).map((option) => option.value)).not.toContain(
+      "set-1",
+    );
+  });
+
+  it("merges source terms into target, skips duplicates, removes source, and keeps target position", () => {
+    seedMergeSets();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Merge saved sets" }));
+    fireEvent.change(screen.getByLabelText("Set to receive words"), {
+      target: { value: "set-1" },
+    });
+    fireEvent.change(screen.getByLabelText("Set to merge and remove"), {
+      target: { value: "set-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+    const sets = JSON.parse(localStorage.getItem("vocab-arcade:sets") ?? "[]");
+    expect(sets.map((set: { title: string }) => set.title)).toEqual(["Animals", "Numbers"]);
+    expect(sets[1].updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
+    expect(sets[1].terms).toHaveLength(2);
+    expect(sets[1].terms[0]).toMatchObject({ id: "term-1", term: "one", definition: "uno" });
+    expect(sets[1].terms[1]).toMatchObject({ term: "red", definition: "rojo", active: false });
+    expect(sets[1].terms[1].id).not.toBe("term-1");
+    expect(screen.getByRole("heading", { name: "Numbers" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Saved sets")).toHaveValue("set-1");
   });
 
   it("imports a full saved-set JSON list from a file", async () => {

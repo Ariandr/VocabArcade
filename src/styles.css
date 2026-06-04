@@ -276,6 +276,13 @@ kbd {
   margin: 0;
 }
 
+.saved-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 .saved-list {
   display: grid;
   gap: 0.65rem;
@@ -383,6 +390,17 @@ kbd {
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
+}
+
+.merge-sets-dialog label {
+  display: grid;
+  gap: 0.4rem;
+  color: #dce3ff;
+  font-weight: 800;
+}
+
+.merge-sets-dialog select {
+  min-height: 3rem;
 }
 
 .workspace {

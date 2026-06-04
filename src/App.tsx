@@ -24,6 +24,7 @@ import {
   type TestSettings,
 } from "./lib/games";
 import {
+  cleanText,
   parseImportFile,
   payloadToStudySet,
   validateImportMessage,
@@ -104,6 +105,10 @@ function setSignature(set: StudySet): string {
 
 function setContentSignature(set: StudySet): string {
   return `${set.title.toLocaleLowerCase()}|${termsSignature(set.terms)}`;
+}
+
+function termContentKey(term: Pick<StudyTerm, "term" | "definition">): string {
+  return `${cleanText(term.term).toLocaleLowerCase()}::${cleanText(term.definition).toLocaleLowerCase()}`;
 }
 
 function findDuplicateSet(importedSet: StudySet, existingSets: StudySet[]): StudySet | undefined {
@@ -595,6 +600,38 @@ function App() {
     setSets(next);
   };
 
+  const mergeSets = (targetId: string, sourceId: string) => {
+    if (targetId === sourceId) return;
+    const targetSet = sets.find((set) => set.id === targetId);
+    const sourceSet = sets.find((set) => set.id === sourceId);
+    if (!targetSet || !sourceSet) return;
+
+    const existingTermKeys = new Set(targetSet.terms.map(termContentKey));
+    const existingTermIds = new Set(targetSet.terms.map((term) => term.id));
+    const addedTerms = sourceSet.terms.flatMap((term) => {
+      const key = termContentKey(term);
+      if (existingTermKeys.has(key)) return [];
+      existingTermKeys.add(key);
+      const nextTerm = existingTermIds.has(term.id) ? { ...term, id: makeId("term") } : term;
+      existingTermIds.add(nextTerm.id);
+      return [nextTerm];
+    });
+    const mergedSet: StudySet = {
+      ...targetSet,
+      terms: [...targetSet.terms, ...addedTerms],
+      updatedAt: new Date().toISOString(),
+    };
+    const next = sets
+      .map((set) => (set.id === targetId ? mergedSet : set))
+      .filter((set) => set.id !== sourceId);
+
+    saveSets(next);
+    setSets(next);
+    setSelectedId(targetId);
+    setIsManaging(false);
+    setMode("review");
+  };
+
   return (
     <I18nContext.Provider value={{ locale, setLocale, t }}>
     <main className="app-shell">
@@ -666,6 +703,7 @@ function App() {
           onDeleteSet={handleRemoveSet} 
           onRenameSet={renameSet}
           onReorderSets={reorderSets}
+          onMergeSets={mergeSets}
         />
       )}
       {pendingDuplicateImport && (
@@ -740,6 +778,7 @@ function ImportScreen({
   onDeleteSet,
   onRenameSet,
   onReorderSets,
+  onMergeSets,
 }: {
   onImport: (payload: ImportPayload) => void;
   onImportSets: (sets: StudySet[]) => void;
@@ -748,6 +787,7 @@ function ImportScreen({
   onDeleteSet: (id: string) => void;
   onRenameSet: (id: string, title: string) => void;
   onReorderSets: (fromIndex: number, toIndex: number) => void;
+  onMergeSets: (targetId: string, sourceId: string) => void;
 }) {
   const { locale, t } = useI18n();
   const [manualText, setManualText] = useState("");
@@ -755,6 +795,7 @@ function ImportScreen({
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [draggingSetId, setDraggingSetId] = useState<string | null>(null);
+  const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false);
   const bookmarklet = useMemo(
     () =>
       buildBookmarklet(currentAppUrl(), {
@@ -898,14 +939,26 @@ function ImportScreen({
         <div className="panel saved-panel" style={{ marginTop: '1rem' }}>
           <div className="saved-panel-header">
             <h2>{t("import.savedTitle")}</h2>
-            <button
-              className="secondary-button saved-action-button saved-export-all-button"
-              type="button"
-              onClick={exportAllSets}
-              aria-label={t("import.exportAllJson")}
-            >
-              {t("import.exportAll")}
-            </button>
+            <div className="saved-panel-actions">
+              <button
+                className="secondary-button saved-action-button saved-export-all-button"
+                type="button"
+                disabled={sets.length < 2}
+                onClick={() => setIsMergeDialogOpen(true)}
+                aria-label={t("merge.open")}
+                title={sets.length < 2 ? t("merge.needsTwoSets") : t("merge.open")}
+              >
+                {t("merge.button")}
+              </button>
+              <button
+                className="secondary-button saved-action-button saved-export-all-button"
+                type="button"
+                onClick={exportAllSets}
+                aria-label={t("import.exportAllJson")}
+              >
+                {t("import.exportAll")}
+              </button>
+            </div>
           </div>
           <div className="saved-list">
             {sets.map((set, index) => {
@@ -1013,7 +1066,106 @@ function ImportScreen({
           </div>
         </div>
       )}
+      {isMergeDialogOpen && (
+        <MergeSetsDialog
+          sets={sets}
+          onCancel={() => setIsMergeDialogOpen(false)}
+          onConfirm={(targetId, sourceId) => {
+            onMergeSets(targetId, sourceId);
+            setIsMergeDialogOpen(false);
+          }}
+        />
+      )}
     </>
+  );
+}
+
+function MergeSetsDialog({
+  sets,
+  onCancel,
+  onConfirm,
+}: {
+  sets: StudySet[];
+  onCancel: () => void;
+  onConfirm: (targetId: string, sourceId: string) => void;
+}) {
+  const { locale, t } = useI18n();
+  const [targetId, setTargetId] = useState(sets[0]?.id ?? "");
+  const [sourceId, setSourceId] = useState(sets.find((set) => set.id !== targetId)?.id ?? "");
+  const targetSet = sets.find((set) => set.id === targetId);
+  const sourceSet = sets.find((set) => set.id === sourceId);
+  const sourceOptions = sets.filter((set) => set.id !== targetId);
+
+  const updateTarget = (nextTargetId: string) => {
+    setTargetId(nextTargetId);
+    if (sourceId === nextTargetId) {
+      setSourceId(sets.find((set) => set.id !== nextTargetId)?.id ?? "");
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="merge-sets-title"
+        aria-modal="true"
+        className="panel duplicate-import-dialog merge-sets-dialog"
+        role="dialog"
+      >
+        <h2 id="merge-sets-title">{t("merge.title")}</h2>
+        <label>
+          {t("merge.targetLabel")}
+          <select
+            aria-label={t("merge.targetLabel")}
+            value={targetId}
+            onChange={(event) => updateTarget(event.target.value)}
+          >
+            {sets.map((set) => (
+              <option key={set.id} value={set.id}>
+                {set.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {t("merge.sourceLabel")}
+          <select
+            aria-label={t("merge.sourceLabel")}
+            value={sourceId}
+            onChange={(event) => setSourceId(event.target.value)}
+          >
+            {sourceOptions.map((set) => (
+              <option key={set.id} value={set.id}>
+                {set.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        {targetSet && sourceSet && (
+          <p>
+            {t("merge.description", {
+              sourceTitle: sourceSet.title,
+              sourceCount: formatTermCount(t, locale, sourceSet.terms.length),
+              targetTitle: targetSet.title,
+              targetCount: formatTermCount(t, locale, targetSet.terms.length),
+            })}
+          </p>
+        )}
+        <div className="duplicate-import-actions">
+          <button className="secondary-button" type="button" onClick={onCancel}>
+            {t("merge.cancel")}
+          </button>
+          <button
+            type="button"
+            disabled={!targetSet || !sourceSet || targetSet.id === sourceSet.id}
+            onClick={() => {
+              if (targetSet && sourceSet) onConfirm(targetSet.id, sourceSet.id);
+            }}
+          >
+            {t("merge.confirm")}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
